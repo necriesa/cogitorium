@@ -10,6 +10,8 @@ Warhammer 40k-themed desktop productivity widgets for tracking, managing and upd
 
 Inspired by the desktop widgets in Tina Huang's [Learn 10X Faster In 10 Minutes](https://www.youtube.com/watch?v=sbmP6i-MChk).
 
+> Unofficial, non-commercial fan project. Not affiliated with or endorsed by Games Workshop. Warhammer 40,000 and related names and imagery are trademarks of Games Workshop Limited. Fonts, references and other sources are listed in [CREDITS.md](CREDITS.md).
+
 ## Design
 
 The visual language follows Owlcat's *Warhammer 40,000: Rogue Trader* UI, and the tokens and rules are at the top of `src/styles.css`:
@@ -102,4 +104,4 @@ src-tauri/               Rust backend
 
 ## Licence
 
-GPL-3.0. See [LICENSE](LICENSE).
+Code: GPL-3.0, see [LICENSE](LICENSE). The bundled fonts are under the SIL Open Font License 1.1 (texts in [`licenses/fonts/`](licenses/fonts/)). The full list of sources, references and dependency licences is in [CREDITS.md](CREDITS.md).
