@@ -15,7 +15,7 @@ export function nowTime(): string {
  * `append_log` command. Every widget writes the same shape so the Cogitator
  * (Claude reading the logs) can parse them:
  *
- *   - 14:32 · Tempormortis · 25 min · film demo
+ *   - 14:32 · Chrono-Siphon · 25 min · film demo
  *
  * Returns the file it wrote to. Outside Tauri it only logs to the console.
  */

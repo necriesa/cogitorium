@@ -1,7 +1,7 @@
 [package]
-name = "dark-cells-widgets"
-version = "0.1.0"
-description = "Warhammer 40k-themed productivity widgets that log to an Obsidian vault"
+name = "cogitorium"
+version = "0.4.0"
+description = "Cogitorium: gothic sci-fi productivity widgets that log to an Obsidian vault"
 authors = ["necriesa"]
 edition = "2024"
 
@@ -11,7 +11,7 @@ edition = "2024"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "dark_cells_widgets_lib"
+name = "cogitorium_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

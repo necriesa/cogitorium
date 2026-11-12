@@ -1,13 +1,14 @@
-//! Rust side of Dark Cells Widgets.
+//! Rust side of Cogitorium.
 //!
 //! The frontend (React, running in the system webview) cannot touch the disk
 //! on its own. It calls the commands below through Tauri's IPC with
 //! `invoke("append_log", { ... })`, and Rust does the file work.
 //!
 //! The vault folder is remembered in `settings.json` in the app's config
-//! folder (on Windows `%APPDATA%\com.necriesa.darkcellswidgets\`). It is
-//! chosen on first run with a folder picker; `DARK_CELLS_VAULT` (e.g. from the
-//! repo's `.env` in dev) is only a fallback when nothing has been saved.
+//! folder (on Windows `%APPDATA%\com.necriesa.cogitorium\`). On first run it
+//! is carried over from the pre-0.4 app ID, read from `DARK_CELLS_VAULT` (dev
+//! `.env`), or detected from Obsidian's open vault; the folder picker is the
+//! last resort.
 
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -65,13 +66,21 @@ fn vault_from_obsidian_list(json: &str) -> Option<PathBuf> {
     (vaults.len() == 1).then(|| vaults.remove(0).0)
 }
 
+/// The app ID used before the Cogitorium rename (v0.4); its saved vault is carried over.
+const LEGACY_APP_ID: &str = "com.necriesa.darkcellswidgets";
+
 /// Where the vault comes from on start-up, in order:
 /// 1. the folder saved in settings.json (chosen earlier or auto-detected),
-/// 2. `DARK_CELLS_VAULT` (dev `.env`),
-/// 3. Obsidian's open vault, read from `obsidian.json`; this one is saved so it sticks.
-fn initial_vault(settings_file: &Path, obsidian_list: Option<&Path>) -> Option<PathBuf> {
+/// 2. the folder saved under the old app ID, copied into the new settings,
+/// 3. `DARK_CELLS_VAULT` (dev `.env`),
+/// 4. Obsidian's open vault, read from `obsidian.json`; this one is saved so it sticks.
+fn initial_vault(settings_file: &Path, legacy_settings: Option<&Path>, obsidian_list: Option<&Path>) -> Option<PathBuf> {
     if let Some(saved) = saved_vault(settings_file) {
         return Some(saved);
+    }
+    if let Some(old) = legacy_settings.and_then(saved_vault) {
+        let _ = save_settings(settings_file, &Settings { vault: Some(old.clone()) });
+        return Some(old);
     }
     if let Some(env) = std::env::var_os("DARK_CELLS_VAULT").map(PathBuf::from).filter(|p| p.is_dir()) {
         return Some(env);
@@ -168,7 +177,7 @@ fn append_log(state: State<AppState>, date: String, entry: String) -> Result<Str
     append_log_in(&vault_root(&state)?, &date, &entry)
 }
 
-/// Auto Quill scrolls live in `<log dir>/Scrolls/`, one Markdown checklist per task.
+/// Data Stylus scrolls live in `<log dir>/Scrolls/`, one Markdown checklist per task.
 fn scroll_dir(vault: &Path) -> Result<PathBuf, String> {
     Ok(log_dir(vault)?.join("Scrolls"))
 }
@@ -250,7 +259,8 @@ pub fn run() {
             // Obsidian keeps its vault list in its own config folder
             // (%APPDATA%\obsidian on Windows, ~/Library/Application Support/obsidian on macOS).
             let obsidian_list = app.path().config_dir().ok().map(|d| d.join("obsidian").join("obsidian.json"));
-            let vault = initial_vault(&settings_file, obsidian_list.as_deref());
+            let legacy_settings = app.path().config_dir().ok().map(|d| d.join(LEGACY_APP_ID).join("settings.json"));
+            let vault = initial_vault(&settings_file, legacy_settings.as_deref(), obsidian_list.as_deref());
             app.manage(AppState { settings_file, vault: Mutex::new(vault) });
             Ok(())
         })
@@ -296,14 +306,14 @@ mod tests {
     #[test]
     fn appends_to_daily_log_inside_vault() {
         let vault = temp_dir("log");
-        let path = append_log_in(&vault, "2026-11-12", "- 14:32 · Tempormortis · 25 min · test").unwrap();
-        append_log_in(&vault, "2026-11-12", "- 14:40 · Auto Quill · completed · test").unwrap();
+        let path = append_log_in(&vault, "2026-11-12", "- 14:32 · Chrono-Siphon · 25 min · test").unwrap();
+        append_log_in(&vault, "2026-11-12", "- 14:40 · Data Stylus · completed · test").unwrap();
 
         let text = fs::read_to_string(&path).unwrap();
         assert!(path.ends_with("2026-11-12.md"));
         assert!(path.contains("Widgets"));
         assert_eq!(text.matches("type: widget-log").count(), 1, "frontmatter written once");
-        assert!(text.contains("Tempormortis · 25 min") && text.contains("Auto Quill · completed"));
+        assert!(text.contains("Chrono-Siphon · 25 min") && text.contains("Data Stylus · completed"));
         assert!(append_log_in(&vault, "../escape", "x").is_err());
         fs::remove_dir_all(&vault).unwrap();
     }
@@ -374,9 +384,16 @@ mod tests {
         let list = a.join("obsidian.json");
         fs::write(&list, obsidian_json(&[(&b, true, 1)])).unwrap();
         if std::env::var_os("DARK_CELLS_VAULT").is_none() {
-            assert_eq!(initial_vault(&settings_file, Some(&list)), Some(b.clone()));
+            assert_eq!(initial_vault(&settings_file, None, Some(&list)), Some(b.clone()));
             assert_eq!(saved_vault(&settings_file), Some(b.clone()));
         }
+
+        // A vault saved under the old app ID wins over detection and is copied across.
+        let new_settings = a.join("new").join("settings.json");
+        let old_settings = a.join("old").join("settings.json");
+        save_settings(&old_settings, &Settings { vault: Some(a.clone()) }).unwrap();
+        assert_eq!(initial_vault(&new_settings, Some(&old_settings), Some(&list)), Some(a.clone()));
+        assert_eq!(saved_vault(&new_settings), Some(a.clone()));
 
         fs::remove_dir_all(&a).unwrap();
         fs::remove_dir_all(&b).unwrap();

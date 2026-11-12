@@ -49,11 +49,11 @@ export const VaultIcon = (p: IconProps) => (
   </Svg>
 );
 
-/** Quill: vane, shaft and nib. */
-export const QuillIcon = (p: IconProps) => (
+/** Data stylus: a slim pen with a grip band and a fine tip. */
+export const StylusIcon = (p: IconProps) => (
   <Svg {...p}>
-    <path d="M13.5 2.5C9 3 5.5 6.5 4.5 11l1 .5C9.5 10.5 12.5 7 13.5 2.5Z" />
-    <path d="M5.5 11.5 3 14M7 9l3-3" />
+    <path d="M11 2.5 13.5 5 6 12.5 2.5 13.5 3.5 10Z" />
+    <path d="M9.5 4 12 6.5M3.5 10l2.5 2.5" />
   </Svg>
 );
 

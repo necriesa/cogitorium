@@ -1,5 +1,5 @@
 /**
- * Auto Quill scrolls: a task broken down into subtasks, stored in the vault as
+ * Data Stylus scrolls: a task broken down into subtasks, stored in the vault as
  * a Markdown checklist so ticks show up in Obsidian (and ticks made in
  * Obsidian come back to the widget).
  */
@@ -112,7 +112,7 @@ export function toMarkdown(scroll: Scroll, now: Date = new Date()): string {
   const stamp = `${now.toLocaleDateString("en-CA")} ${now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
   const lines = [
     "---",
-    "type: auto-quill-scroll",
+    "type: data-stylus-scroll",
     `created: ${scroll.created}`,
     `updated: ${stamp}`,
     `progress: ${done}/${scroll.items.length}`,

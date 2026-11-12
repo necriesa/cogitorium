@@ -3,8 +3,8 @@
   "identifier": "default",
   "description": "What the two widget windows may do: core defaults, drag/close/minimise/pin their own frameless windows, and open a folder picker to choose the vault.",
   "windows": [
-    "auto-quill",
-    "tempormortis"
+    "data-stylus",
+    "chrono-siphon"
   ],
   "permissions": [
     "core:default",

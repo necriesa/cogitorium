@@ -73,17 +73,17 @@ function Pillar({ x }: { x: number }) {
 }
 
 /**
- * The Tempormortis, after the Judiciar model: a bronze hourglass on a chain,
- * skull finial, winged-skull cap, ribbed pillars, skull base, and a crux
- * pendant on a side chain. The sand is the Chapter's homeworld sand; the cyan
- * glow is the stasis field while time is being slowed.
+ * The Chrono-Siphon: a bronze hourglass on a chain, with a skull finial,
+ * winged-skull cap, ribbed pillars, skull base, and a crux pendant on a side
+ * chain (design references in CREDITS.md). The cyan glow is the stasis
+ * field while time is being slowed.
  */
 function Hourglass({ fraction, phase }: { fraction: number; phase: Phase }) {
   const top = 1 - fraction;
   const topH = 71 * top;
   const botH = 70 * fraction;
   return (
-    <svg className={`tempormortis phase-${phase}`} viewBox="0 0 200 300" role="img" aria-label={`Tempormortis, ${Math.round(fraction * 100)}% elapsed`}>
+    <svg className={`chrono-siphon phase-${phase}`} viewBox="0 0 200 300" role="img" aria-label={`Chrono-Siphon, ${Math.round(fraction * 100)}% elapsed`}>
       <SigilDefs />
       <defs>
         <clipPath id="tm-top"><path d={TOP_BULB} /></clipPath>
@@ -179,11 +179,11 @@ function Hourglass({ fraction, phase }: { fraction: number; phase: Phase }) {
 }
 
 /**
- * Tempormortis: a Pomodoro timer in the Judiciar's hourglass.
+ * Chrono-Siphon: a Pomodoro timer in a gothic stasis hourglass.
  * "Invoke stasis" starts it; when the sands run out it tolls, and
  * "Record the verdict" logs the session to the vault.
  */
-export default function Tempormortis() {
+export default function ChronoSiphon() {
   const [task, setTask] = useState("");
   const [minutes, setMinutes] = useState(25);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -222,7 +222,7 @@ export default function Tempormortis() {
 
   async function recordVerdict() {
     try {
-      const file = await logToVault("Tempormortis", `${minutes} min`, task || "unnamed quarry");
+      const file = await logToVault("Chrono-Siphon", `${minutes} min`, task || "unnamed quarry");
       setStatus(`Verdict recorded in ${file.split(/[\\/]/).pop()}`);
       reset();
     } catch (err) {
@@ -242,7 +242,7 @@ export default function Tempormortis() {
 
   return (
     <div className="widget">
-      <TitleBar title="Tempormortis" icon={<HourglassIcon size={14} />} />
+      <TitleBar title="Chrono-Siphon" icon={<HourglassIcon size={14} />} />
       <main className="body">
         <div className="relic">
           <Hourglass fraction={fraction} phase={phase} />

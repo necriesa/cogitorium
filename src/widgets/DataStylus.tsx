@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import TitleBar from "../components/TitleBar";
-import { QuillIcon } from "../components/Icons";
+import { StylusIcon } from "../components/Icons";
 import { SigilDefs } from "../components/Sigils";
 import { logToVault, today } from "../lib/vaultLog";
 import { breakDown, fileNameFor, fromMarkdown, toMarkdown, type Scroll } from "../lib/scroll";
 import { listScrolls, loadScroll, saveScroll } from "../lib/scrollStore";
 
+// Storage keys keep the widget's pre-0.3 name (Auto Quill) so an open scroll survives the rename.
 const ACTIVE_KEY = "auto-quill.active";
 
 /** A red wax purity seal, stuck on the slate's casing. */
@@ -34,14 +35,14 @@ function readActive(): Scroll | null {
 }
 
 /**
- * Auto Quill, presented as a data slate: an iron handheld casing around a
+ * Data Stylus, presented as a data slate: an iron handheld casing around a
  * green cogitator screen, with rune keys underneath. Paste a task (prose or
  * bullets), the slate breaks it into subtasks, and the scroll is kept as a
  * Markdown checklist in the vault.
  * Ticks here update the note; ticks made in Obsidian come back when the
  * widget is focused.
  */
-export default function AutoQuill() {
+export default function DataStylus() {
   const [scroll, setScroll] = useState<Scroll | null>(readActive);
   const [taskName, setTaskName] = useState("");
   const [draft, setDraft] = useState("");
@@ -102,7 +103,7 @@ export default function AutoQuill() {
     setScroll(next);
     try {
       await saveScroll(next.file, toMarkdown(next));
-      await logToVault("Auto Quill", ...logFields);
+      await logToVault("Data Stylus", ...logFields);
       setStatus(`Inscribed · Scrolls/${next.file}`);
     } catch (err) {
       setStatus(`The quill faltered: ${String(err)}`);
@@ -144,7 +145,7 @@ export default function AutoQuill() {
       <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
         <SigilDefs />
       </svg>
-      <TitleBar title="Auto Quill" icon={<QuillIcon size={14} />} />
+      <TitleBar title="Data Stylus" icon={<StylusIcon size={14} />} />
       <main className="slate">
         {/* casing top: speaker grille, activity lamp, maker's plate, purity seal */}
         <div className="slate-top">

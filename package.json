@@ -1,7 +1,7 @@
 {
-  "name": "dark-cells-widgets",
+  "name": "cogitorium",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -27,5 +27,5 @@
     "typescript": "~6.0.3",
     "vite": "^8.0.16"
   },
-  "description": "Warhammer 40k-themed desktop productivity widgets (Auto Quill, Tempormortis) that log to an Obsidian vault"
+  "description": "Cogitorium: gothic sci-fi desktop productivity widgets (Data Stylus, Chrono-Siphon) that log to an Obsidian vault"
 }

@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    dark_cells_widgets_lib::run()
+    cogitorium_lib::run()
 }

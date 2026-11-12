@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Dark Cells Widgets",
-  "version": "0.1.0",
-  "identifier": "com.necriesa.darkcellswidgets",
+  "productName": "Cogitorium",
+  "version": "0.4.0",
+  "identifier": "com.necriesa.cogitorium",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,8 +12,8 @@
   "app": {
     "windows": [
       {
-        "label": "auto-quill",
-        "title": "Auto Quill",
+        "label": "data-stylus",
+        "title": "Data Stylus",
         "width": 380,
         "height": 620,
         "minWidth": 320,
@@ -24,8 +24,8 @@
         "resizable": true
       },
       {
-        "label": "tempormortis",
-        "title": "Tempormortis",
+        "label": "chrono-siphon",
+        "title": "Chrono-Siphon",
         "width": 300,
         "height": 600,
         "x": 470,

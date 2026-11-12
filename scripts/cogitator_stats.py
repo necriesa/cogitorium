@@ -1,11 +1,13 @@
-"""Cogitator stats: counts what the Dark Cells widgets logged into the vault.
+"""Cogitator stats: counts what the Cogitorium widgets logged into the vault.
 
 Reads, inside the vault's widget folder (default `Sources/Journal/Widgets`):
   - daily logs `<YYYY-MM-DD>.md`, one line per action:
-        - 14:32 · Tempormortis · 25 min · film demo
-        - 14:40 · Auto Quill · completed · <subtask> · <task>
-        - 14:41 · Auto Quill · task begun · <task> · 4 subtasks
-  - Auto Quill scrolls `Scrolls/<Task>.md` (Markdown checklists with
+        - 14:32 · Chrono-Siphon · 25 min · film demo
+        - 14:40 · Data Stylus · completed · <subtask> · <task>
+        - 14:41 · Data Stylus · task begun · <task> · 4 subtasks
+    Older logs use earlier widget names (Tempormortis / Chronoglass for the
+    timer, Auto Quill for the stylus); all of them are read.
+  - Data Stylus scrolls `Scrolls/<Task>.md` (Markdown checklists with
     `updated:` and `progress:` frontmatter).
 
 Prints a Markdown report (or JSON with --json) for a date range: focus
@@ -39,6 +41,9 @@ SEP = " · "
 LINE = re.compile(r"^- (\d{1,2}):(\d{2}) · (.+)$")
 DATE_FILE = re.compile(r"^(\d{4}-\d{2}-\d{2})\.md$")
 STALLED_AFTER_DAYS = 7
+# Log names for each widget, current first. Earlier versions used the older names.
+TIMER_NAMES = {"Chrono-Siphon", "Chronoglass", "Tempormortis"}
+STYLUS_NAMES = {"Data Stylus", "Auto Quill"}
 
 
 # ---------------------------------------------------------------- locating
@@ -50,13 +55,15 @@ def settings_vault() -> Path | None:
         candidates.append(Path(os.environ["APPDATA"]))
     candidates += [Path.home() / "Library" / "Application Support", Path.home() / ".config"]
     for base in candidates:
-        f = base / "com.necriesa.darkcellswidgets" / "settings.json"
-        try:
-            vault = json.loads(f.read_text(encoding="utf-8")).get("vault")
-        except (OSError, ValueError):
-            continue
-        if vault and Path(vault).is_dir():
-            return Path(vault)
+        # current app ID first, then the pre-0.4 one
+        for app_id in ("com.necriesa.cogitorium", "com.necriesa.darkcellswidgets"):
+            f = base / app_id / "settings.json"
+            try:
+                vault = json.loads(f.read_text(encoding="utf-8")).get("vault")
+            except (OSError, ValueError):
+                continue
+            if vault and Path(vault).is_dir():
+                return Path(vault)
     return None
 
 
@@ -131,14 +138,14 @@ def read_logs(folder: Path, start: date, end: date):
             fields = [p.strip() for p in lm.group(3).split(SEP)]
             widget = fields[0] if fields else ""
             days_with_logs.add(day)
-            if widget == "Tempormortis" and len(fields) >= 2:
+            if widget in TIMER_NAMES and len(fields) >= 2:
                 mins = parse_minutes(fields[1])
                 if mins is None:
                     unparsed += 1
                     continue
                 task = fields[2] if len(fields) > 2 else "untitled"
                 sessions.append(Session(day, hour, mins, task))
-            elif widget == "Auto Quill" and len(fields) >= 3:
+            elif widget in STYLUS_NAMES and len(fields) >= 3:
                 action = fields[1]
                 if action in ("completed", "reopened"):
                     ticks.append(Tick(day, hour, action, fields[2], fields[3] if len(fields) > 3 else ""))
@@ -295,7 +302,7 @@ def to_markdown(r: dict) -> str:
     if not r["data_notes"]["log_folder_exists"]:
         out += [f"No widget logs yet: `{r['folder']}` does not exist.", ""]
     out += [
-        "## Focus (Tempormortis)",
+        "## Focus (Chrono-Siphon)",
         f"- Sessions: {f['sessions']} · total {hm(f['minutes'])} · active days {f['active_days']}/{r['range']['days']}"
         f" · average {hm(f['avg_minutes_per_active_day'])} per active day",
         f"- Streak: current {f['current_streak_days']} day(s), longest in range {f['longest_streak_days']}",
@@ -313,7 +320,7 @@ def to_markdown(r: dict) -> str:
         out += ["", "### Focus by hour started"] + [f"- {x['hour']:02d}:00 {bar(x['minutes'], max(y['minutes'] for y in f['by_hour']), 12)} {hm(x['minutes'])}" for x in f["by_hour"]]
     out += [
         "",
-        "## Tasks (Auto Quill)",
+        "## Tasks (Data Stylus)",
         f"- Subtasks completed: {t['subtasks_completed']} · reopened: {t['subtasks_reopened']} · tasks begun: {len(t['tasks_begun'])}",
     ]
     if t["tasks_begun"]:

@@ -2,7 +2,7 @@
 
 ## Fan project disclaimer
 
-Dark Cells Widgets is an unofficial, non-commercial fan project. It is not affiliated with, endorsed or sponsored by Games Workshop.
+Cogitorium (formerly Dark Cells Widgets) is an unofficial, non-commercial fan project. It is not affiliated with, endorsed or sponsored by Games Workshop.
 
 - **Games Workshop:** Warhammer 40,000, Adeptus Mechanicus, Judiciar, Tempormortis, cogitator, data-slate, auto-quill, purity seal and related names, symbols and imagery are trademarks or ™/® of Games Workshop Limited, used here without permission for fan purposes. No challenge to their status is intended.
 - **Other games:** *Warhammer 40,000: Space Marine 2* (Saber Interactive / Focus Entertainment) and *Warhammer 40,000: Rogue Trader* (Owlcat Games) are named only as design references. No art, audio or other assets from any game are included in this repository or the app.
@@ -26,23 +26,23 @@ Everything visual in the app was drawn for this project as SVG or CSS. Nothing i
 
 | Asset | Where | Notes |
 |---|---|---|
-| App icon (cogitator monitor with a cog-skull) | `src-tauri/icons/source/app-icon.svg` | Original drawing. The half-bone, half-machine cog-skull is a fan rendition of the Adeptus Mechanicus emblem (Games Workshop). The PNG, ICO and ICNS sizes in `src-tauri/icons/` are generated from the SVG with `tauri icon`. |
-| Tempormortis hourglass, skulls, winged skull, cog, wax purity seal | `src/widgets/Tempormortis.tsx`, `src/components/Sigils.tsx` | Original SVG, based on the references below |
-| Title bar and button icons (pin, minimise, close, vault, quill, hourglass) | `src/components/Icons.tsx` | Original SVG line icons |
+| App icon (cogitator monitor with a flesh-and-machine brain emblem) | `src-tauri/icons/source/app-icon.svg` | Original drawing and an original emblem: a brain seen from above, flesh on the left with a bionic cable jacked in, and archaic machinery on the right (riveted plates, cog, vacuum valve, ribbed conduit). Before v0.2 it used a fan rendition of the Adeptus Mechanicus cog-skull, which was replaced to avoid using a Games Workshop emblem. The PNG, ICO and ICNS sizes in `src-tauri/icons/` are generated from the SVG with `tauri icon`. |
+| Chrono-Siphon hourglass, skulls, winged skull, cog, wax purity seal | `src/widgets/ChronoSiphon.tsx`, `src/components/Sigils.tsx` | Original SVG, based on the references below |
+| Title bar and button icons (pin, minimise, close, vault, stylus, hourglass) | `src/components/Icons.tsx` | Original SVG line icons |
 | Data slate casing, cogitator screens, scanlines | `src/styles.css` | Pure CSS |
-| Timer chime and toll | `src/widgets/Tempormortis.tsx` | Synthesised at runtime with the Web Audio API; no audio files |
+| Timer chime and toll | `src/widgets/ChronoSiphon.tsx` | Synthesised at runtime with the Web Audio API; no audio files |
 
 ## Design references (inspiration only, nothing copied or included)
 
 **Concept**
 - Tina Huang, *Learn 10X Faster In 10 Minutes*: the typewriter and avocado desktop widgets that logged to Obsidian. https://www.youtube.com/watch?v=sbmP6i-MChk
 
-**Tempormortis**
+**Chrono-Siphon (hourglass timer)**: inspired by the Judiciar's *tempormortis*. It was named Tempormortis in v0.1 and Chronoglass in v0.2, and renamed so the app doesn't use Games Workshop's term.
 - The Games Workshop Primaris Judiciar miniature, as pictured on Lexicanum: https://wh40k.lexicanum.com/wiki/Judicar
 - An Ultramarines Judiciar figure by JoyToy, photographed by mad.figures (Instagram): https://www.instagram.com/p/DRC5bSCCMYk/
 - Lore: Lexicanum, *Tempormortis*: https://wh40k.lexicanum.com/wiki/Tempormortis · Warhammer 40k Wiki, *Tempormortis*: https://warhammer40k.fandom.com/wiki/Tempormortis
 
-**Auto Quill and data slate**
+**Data Stylus (data slate)**: inspired by the 40k *auto-quill* and data-slates. It was named Auto Quill before v0.3.
 - Warhammer 40k Wiki, *Auto Quill*: https://warhammer40k.fandom.com/wiki/Auto_Quill (citing the *Dark Heresy* and *Only War* core rulebooks)
 - Fantasy Flight Games forum archive, *What does an autoquill look like and how big is it?*: https://ffg-forum-archive.entropicdreams.com/topic/7076-what-does-an-autoquill-look-like-and-how-big-is-it
 - Fantasy Flight Games forum archive, *Picturing the Auto Quill*: https://ffg-forum-archive.entropicdreams.com/topic/19126-picturing-the-auto-quill

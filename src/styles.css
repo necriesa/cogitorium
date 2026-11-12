@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Dark Cells widgets: design system
+   Cogitorium: design system
    Reference: Owlcat's Warhammer 40,000: Rogue Trader UI. Dark gunmetal
    machinery frames, parchment for written content, green-phosphor cogitator
    panels for live data, small-caps serif labels, bronze used sparingly, and
@@ -369,22 +369,22 @@ button {
   word-break: break-word;
 }
 
-/* ========================================================== Tempormortis */
+/* ========================================================== Chrono-Siphon */
 .relic {
   display: grid;
   place-items: center;
   margin-top: -4px;
 }
-.tempormortis {
+.chrono-siphon {
   width: 140px;
   height: 210px;
   overflow: visible;
   filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.8));
 }
-.tempormortis .sway {
+.chrono-siphon .sway {
   transform-origin: 100px 0;
 }
-.tempormortis.phase-running .sway {
+.chrono-siphon.phase-running .sway {
   animation: sway 5s ease-in-out infinite;
 }
 @keyframes sway {
@@ -406,38 +406,38 @@ button {
   stroke: #1f221e;
   stroke-width: 0.6;
 }
-.tempormortis .glass {
+.chrono-siphon .glass {
   fill: rgba(30, 48, 58, 0.6);
 }
 /* Stasis light. Everything below is clipped to the glass, so the effect
    reads as light inside the relic rather than a halo behind it.
    idle: dark glass. running: cold light breathing at the neck, a rim light,
    and a slow sheen. paused: a dim, still glow. finished: a red ember. */
-.tempormortis .glass-edge {
+.chrono-siphon .glass-edge {
   fill: none;
   stroke: rgba(170, 210, 220, 0.28);
   stroke-width: 1.2;
   transition: stroke 0.8s;
 }
-.tempormortis.phase-running .glass-edge {
+.chrono-siphon.phase-running .glass-edge {
   stroke: rgba(190, 238, 255, 0.6);
 }
-.tempormortis.phase-finished .glass-edge {
+.chrono-siphon.phase-finished .glass-edge {
   stroke: rgba(255, 150, 135, 0.55);
 }
-.tempormortis .stasis {
+.chrono-siphon .stasis {
   fill: url(#stasis);
   opacity: 0;
   transition: opacity 0.8s;
 }
-.tempormortis.phase-running .stasis {
+.chrono-siphon.phase-running .stasis {
   opacity: 1;
   animation: stasis-breathe 4.8s ease-in-out infinite;
 }
-.tempormortis.phase-paused .stasis {
+.chrono-siphon.phase-paused .stasis {
   opacity: 0.35;
 }
-.tempormortis.phase-finished .stasis {
+.chrono-siphon.phase-finished .stasis {
   fill: url(#stasis-alarm);
   opacity: 1;
 }
@@ -450,19 +450,19 @@ button {
     opacity: 1;
   }
 }
-.tempormortis .sand-glint {
+.chrono-siphon .sand-glint {
   fill: #fff4d6;
   opacity: 0.25;
   transition: opacity 0.8s;
 }
-.tempormortis.phase-running .sand-glint {
+.chrono-siphon.phase-running .sand-glint {
   fill: #eafaff;
   opacity: 0.75;
 }
-.tempormortis .sweep {
+.chrono-siphon .sweep {
   opacity: 0;
 }
-.tempormortis.phase-running .sweep {
+.chrono-siphon.phase-running .sweep {
   opacity: 1;
   animation: sweep 9s cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
@@ -474,7 +474,7 @@ button {
     transform: translateX(190px);
   }
 }
-.tempormortis .stream {
+.chrono-siphon .stream {
   stroke: #ffd77a;
   stroke-width: 1.6;
   stroke-dasharray: 2 3;
@@ -545,7 +545,7 @@ button {
   gap: 10px;
 }
 
-/* ======================================================= Auto Quill slate */
+/* ======================================================= Data Stylus slate */
 /* A handheld data-slate: iron casing, green cogitator screen, rune keys. */
 .slate {
   flex: 1;

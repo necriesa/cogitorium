@@ -1,9 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <!--
-    Dark Cells Widgets app icon (source for `npm run tauri icon`).
-    A cogitator monitor showing a Mechanicus cog-skull, half bone and half
-    machine, in green phosphor, after the Space Marine 2 cogitator screens.
-    Bold shapes so it still reads at 16-32px.
+    Source for `npm run tauri icon`.
+    Cogitorium app icon. A cogitator monitor showing the project's own emblem:
+    a brain seen from above. The left half is flesh, with a bionic cable jacked
+    into it; the right half has been replaced by archaic machinery (riveted
+    plates, a cog, a vacuum valve, a ribbed conduit) rather than modern
+    circuitry, in keeping with a setting that shuns thinking machines. Green
+    phosphor, screen style after the Space Marine 2 cogitator screens (see
+    CREDITS.md). Bold shapes so it still reads at 16-32px.
   -->
   <defs>
     <linearGradient id="bezel" x1="0" y1="0" x2="0" y2="1">
@@ -30,9 +34,6 @@
     </pattern>
     <clipPath id="screen-clip">
       <rect x="150" y="150" width="724" height="640" rx="56"/>
-    </clipPath>
-    <clipPath id="right-half">
-      <rect x="512" y="0" width="512" height="1024"/>
     </clipPath>
     <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
       <feGaussianBlur stdDeviation="9" result="b"/>
@@ -88,46 +89,68 @@
       <rect x="610" y="708" width="20" height="20"/>
     </g>
 
-    <!-- cog-skull -->
-    <g filter="url(#glow)" transform="translate(512 445) scale(0.86) translate(-512 -455)">
-      <g fill="#6dff84" transform="translate(512 455)">
-        <circle r="196"/>
-        <g id="teeth">
-          <rect x="-34" y="-246" width="68" height="70" rx="10"/>
-          <rect x="-34" y="-246" width="68" height="70" rx="10" transform="rotate(30)"/>
-          <rect x="-34" y="-246" width="68" height="70" rx="10" transform="rotate(60)"/>
-          <rect x="-34" y="-246" width="68" height="70" rx="10" transform="rotate(90)"/>
-          <rect x="-34" y="-246" width="68" height="70" rx="10" transform="rotate(120)"/>
-          <rect x="-34" y="-246" width="68" height="70" rx="10" transform="rotate(150)"/>
-          <rect x="-34" y="-246" width="68" height="70" rx="10" transform="rotate(180)"/>
-          <rect x="-34" y="-246" width="68" height="70" rx="10" transform="rotate(210)"/>
-          <rect x="-34" y="-246" width="68" height="70" rx="10" transform="rotate(240)"/>
-          <rect x="-34" y="-246" width="68" height="70" rx="10" transform="rotate(270)"/>
-          <rect x="-34" y="-246" width="68" height="70" rx="10" transform="rotate(300)"/>
-          <rect x="-34" y="-246" width="68" height="70" rx="10" transform="rotate(330)"/>
-        </g>
+    <!-- emblem (original mark): flesh brain on the left with a bionic cable jacked in;
+         the right half replaced by archaic machinery -->
+    <g filter="url(#glow)" transform="translate(518 452) scale(1.06) translate(-512 -450)">
+
+      <!-- ===== left hemisphere: flesh ===== -->
+      <path d="M500 292C470 274 428 278 406 300C374 296 344 316 338 346C308 360 296 394 306 424C288 450 294 488 318 508C314 542 338 572 372 578C390 606 428 618 460 606C478 620 496 616 500 604Z" fill="#6dff84"/>
+      <g fill="none" stroke="#04140a" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M428 318C446 336 436 356 456 370C470 380 466 398 484 404"/>
+        <path d="M352 376C380 372 394 392 420 388C444 384 452 404 476 404"/>
+        <path d="M396 444C414 438 430 458 470 456"/>
+        <path d="M346 514C372 500 392 522 418 512C440 504 456 522 480 516"/>
+        <path d="M398 566C418 552 438 572 466 562"/>
+        <path d="M470 312C482 334 470 352 488 366"/>
       </g>
-      <!-- skull cut out of the cog (dark) -->
-      <path transform="translate(402 337) scale(11)" fill="#04140a"
-        d="M10 1C4.8 1 1.5 4.6 1.5 9.2c0 2.8 1.2 4.6 2.8 5.6V18c0 1.6 1.2 3 2.8 3h5.8c1.6 0 2.8-1.4 2.8-3v-3.2c1.6-1 2.8-2.8 2.8-5.6C18.5 4.6 15.2 1 10 1Z"/>
-      <!-- bone half (left): eye socket, nose, teeth -->
-      <g fill="#6dff84">
-        <ellipse cx="474" cy="447" rx="30" ry="32"/>
-        <path d="M512 476 496 506H512Z"/>
-        <rect x="462" y="534" width="12" height="40" rx="4"/>
-        <rect x="488" y="534" width="12" height="40" rx="4"/>
+
+      <!-- bionic port sunk into the flesh, with rivets -->
+      <circle cx="372" cy="454" r="30" fill="#04140a" stroke="#6dff84" stroke-width="7"/>
+      <g fill="#6dff84"><circle cx="372" cy="418" r="6"/><circle cx="408" cy="454" r="6"/><circle cx="372" cy="490" r="6"/><circle cx="336" cy="454" r="6"/></g>
+
+      <!-- ===== the cable: ribbed hose from the screen edge into the port ===== -->
+      <path d="M196 612C246 612 278 592 300 556C318 526 330 498 346 480" fill="none" stroke="#6dff84" stroke-width="38" stroke-linecap="round"/>
+      <path d="M196 612C246 612 278 592 300 556C318 526 330 498 346 480" fill="none" stroke="#04140a" stroke-width="26" stroke-linecap="round"/>
+      <path d="M196 612C246 612 278 592 300 556C318 526 330 498 346 480" fill="none" stroke="#6dff84" stroke-width="26" stroke-dasharray="6 9"/>
+
+      <!-- plug and clamp collar -->
+      <g transform="rotate(-50 360 466)">
+        <rect x="336" y="452" width="48" height="30" rx="5" fill="#04140a" stroke="#6dff84" stroke-width="7"/>
+        <path d="M346 452V482M374 452V482" stroke="#6dff84" stroke-width="5"/>
       </g>
-      <!-- machine half (right): lens eye, plate seams, vent teeth -->
-      <g clip-path="url(#right-half)">
-        <circle cx="550" cy="447" r="34" fill="none" stroke="#6dff84" stroke-width="10"/>
-        <circle cx="550" cy="447" r="12" fill="#6dff84"/>
-        <path d="M512 476 528 506H512Z" fill="#6dff84"/>
-        <path d="M520 370H588M598 400V500M520 520H596" stroke="#6dff84" stroke-width="8" fill="none"/>
-        <rect x="524" y="534" width="12" height="40" rx="2" fill="#6dff84"/>
-        <rect x="550" y="534" width="12" height="40" rx="2" fill="#6dff84"/>
+
+      <!-- ===== right hemisphere: machinery ===== -->
+      <path d="M524 292C554 274 596 278 618 300C650 296 680 316 686 346C716 360 728 394 718 424C736 450 730 488 706 508C710 542 686 572 652 578C634 606 596 618 564 606C546 620 528 616 524 604Z" fill="#6dff84" fill-opacity="0.14" stroke="#6dff84" stroke-width="10" stroke-linejoin="round"/>
+      <!-- riveted armour-plate seams -->
+      <g fill="none" stroke="#6dff84" stroke-width="8" stroke-linecap="round">
+        <path d="M528 386C590 376 650 380 700 396"/>
+        <path d="M528 492C596 484 662 486 718 474"/>
       </g>
-      <!-- seam down the middle -->
-      <path d="M512 340V586" stroke="#04140a" stroke-width="8"/>
+      <g fill="#6dff84"><circle cx="548" cy="372" r="6"/><circle cx="604" cy="368" r="6"/><circle cx="660" cy="376" r="6"/><circle cx="548" cy="478" r="6"/><circle cx="614" cy="474" r="6"/><circle cx="680" cy="474" r="6"/></g>
+
+      <!-- top plate: a cog -->
+      <g transform="translate(598 338) scale(0.85)" fill="#6dff84">
+        <rect x="-9" y="-46" width="18" height="16" rx="3" transform="rotate(0)"/><rect x="-9" y="-46" width="18" height="16" rx="3" transform="rotate(45)"/><rect x="-9" y="-46" width="18" height="16" rx="3" transform="rotate(90)"/><rect x="-9" y="-46" width="18" height="16" rx="3" transform="rotate(135)"/><rect x="-9" y="-46" width="18" height="16" rx="3" transform="rotate(180)"/><rect x="-9" y="-46" width="18" height="16" rx="3" transform="rotate(225)"/><rect x="-9" y="-46" width="18" height="16" rx="3" transform="rotate(270)"/><rect x="-9" y="-46" width="18" height="16" rx="3" transform="rotate(315)"/>
+        <circle r="34"/>
+        <circle r="13" fill="#04140a"/>
+      </g>
+
+      <!-- middle plate: a vacuum valve with a lit filament -->
+      <g fill="none" stroke="#6dff84" stroke-width="7" stroke-linejoin="round">
+        <path d="M630 466V418C630 398 646 386 660 386C674 386 690 398 690 418V466Z" fill="#04140a"/>
+        <path d="M644 452 652 430 660 452 668 430 676 452" stroke-width="5"/>
+        <path d="M624 466H696" stroke-width="10"/>
+      </g>
+      <path d="M548 420H604V444H630" fill="none" stroke="#6dff84" stroke-width="7"/>
+
+      <!-- bottom plate: a ribbed conduit, the flesh's fold becoming pipework -->
+      <path d="M480 516H560C590 516 600 550 630 550C656 550 664 528 690 522" fill="none" stroke="#6dff84" stroke-width="24" stroke-linecap="round"/>
+      <path d="M480 516H560C590 516 600 550 630 550C656 550 664 528 690 522" fill="none" stroke="#04140a" stroke-width="12" stroke-linecap="round"/>
+      <path d="M480 516H560C590 516 600 550 630 550C656 550 664 528 690 522" fill="none" stroke="#6dff84" stroke-width="12" stroke-dasharray="5 8"/>
+
+
+      <!-- the divide between flesh and machine -->
+      <path d="M512 286V614" stroke="#04140a" stroke-width="12"/>
     </g>
 
     <!-- scanlines and glass sheen -->
