@@ -384,16 +384,30 @@ button {
 .chrono-siphon .sway {
   transform-origin: 100px 0;
 }
-.chrono-siphon.phase-running .sway {
+/* Looping animations stay attached while running, held and finished, and
+   are only paused (animation-play-state) when not running. Removing them on
+   Hold made the hourglass snap upright, and re-adding them on Resume
+   restarted them from frame 0, which caused the jump. */
+.chrono-siphon:not(.phase-idle) .sway {
   animation: sway 5s ease-in-out infinite;
 }
+.chrono-siphon:not(.phase-running) .sway,
+.chrono-siphon:not(.phase-running) .stasis,
+.chrono-siphon:not(.phase-running) .sweep,
+.chrono-siphon:not(.phase-running) .stream {
+  animation-play-state: paused;
+}
+/* starts and ends upright, so the first swing and a Release never jump */
 @keyframes sway {
   0%,
   100% {
-    transform: rotate(-1.4deg);
+    transform: rotate(0deg);
   }
-  50% {
+  25% {
     transform: rotate(1.4deg);
+  }
+  75% {
+    transform: rotate(-1.4deg);
   }
 }
 .chain-link {
@@ -412,7 +426,9 @@ button {
 /* Stasis light. Everything below is clipped to the glass, so the effect
    reads as light inside the relic rather than a halo behind it.
    idle: dark glass. running: cold light breathing at the neck, a rim light,
-   and a slow sheen. paused: a dim, still glow. finished: a red ember. */
+   and a slow sheen. held: time frozen; the sand stream stops mid-fall, the
+   light locks bright and white, and a stasis lattice fills the glass.
+   finished: a red ember. */
 .chrono-siphon .glass-edge {
   fill: none;
   stroke: rgba(170, 210, 220, 0.28);
@@ -422,6 +438,10 @@ button {
 .chrono-siphon.phase-running .glass-edge {
   stroke: rgba(190, 238, 255, 0.6);
 }
+.chrono-siphon.phase-paused .glass-edge {
+  stroke: rgba(235, 252, 255, 0.85);
+  stroke-width: 1.6;
+}
 .chrono-siphon.phase-finished .glass-edge {
   stroke: rgba(255, 150, 135, 0.55);
 }
@@ -430,12 +450,22 @@ button {
   opacity: 0;
   transition: opacity 0.8s;
 }
-.chrono-siphon.phase-running .stasis {
+.chrono-siphon.phase-running .stasis,
+.chrono-siphon.phase-paused .stasis {
   opacity: 1;
   animation: stasis-breathe 4.8s ease-in-out infinite;
 }
 .chrono-siphon.phase-paused .stasis {
-  opacity: 0.35;
+  fill: url(#stasis-held);
+}
+/* stasis lattice: fine horizontal bands that appear only while held */
+.chrono-siphon .held-field {
+  fill: url(#held-lattice);
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+.chrono-siphon.phase-paused .held-field {
+  opacity: 1;
 }
 .chrono-siphon.phase-finished .stasis {
   fill: url(#stasis-alarm);
@@ -455,16 +485,22 @@ button {
   opacity: 0.25;
   transition: opacity 0.8s;
 }
-.chrono-siphon.phase-running .sand-glint {
+.chrono-siphon.phase-running .sand-glint,
+.chrono-siphon.phase-paused .sand-glint {
   fill: #eafaff;
   opacity: 0.75;
 }
 .chrono-siphon .sweep {
   opacity: 0;
+  transition: opacity 0.4s;
 }
-.chrono-siphon.phase-running .sweep {
+.chrono-siphon.phase-running .sweep,
+.chrono-siphon.phase-paused .sweep {
   opacity: 1;
   animation: sweep 9s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+.chrono-siphon.phase-paused .stream {
+  stroke: #fff1c4;
 }
 @keyframes sweep {
   from {

@@ -105,6 +105,15 @@ function Hourglass({ fraction, phase }: { fraction: number; phase: Phase }) {
           <stop offset="0.4" stopColor="#e5483c" stopOpacity="0.2" />
           <stop offset="1" stopColor="#e5483c" stopOpacity="0" />
         </radialGradient>
+        {/* held: the light locks bright and white, and a lattice fills the glass */}
+        <radialGradient id="stasis-held" cx="100" cy="163" r="78" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#ffffff" stopOpacity="0.9" />
+          <stop offset="0.35" stopColor="#c8f3ff" stopOpacity="0.5" />
+          <stop offset="1" stopColor="#8fdcf0" stopOpacity="0.12" />
+        </radialGradient>
+        <pattern id="held-lattice" width="200" height="4" patternUnits="userSpaceOnUse">
+          <rect width="200" height="1" fill="#e6fbff" fillOpacity="0.35" />
+        </pattern>
         <linearGradient id="sweep" x1="0" x2="1">
           <stop offset="0" stopColor="#e6f9ff" stopOpacity="0" />
           <stop offset="0.5" stopColor="#e6f9ff" stopOpacity="0.16" />
@@ -141,9 +150,13 @@ function Hourglass({ fraction, phase }: { fraction: number; phase: Phase }) {
         {/* catch-light on each sand surface, lit by the stasis glow */}
         {topH > 1 && <rect clipPath="url(#tm-top)" x="0" y={163 - topH} width="200" height="1.6" className="sand-glint" />}
         {botH > 1 && <rect clipPath="url(#tm-bottom)" x="0" y={234 - botH} width="200" height="1.6" className="sand-glint" />}
-        {phase === "running" && <line x1="100" y1="160" x2="100" y2={234 - botH} className="stream" />}
+        {/* the falling sand: kept while held so its grains freeze mid-fall */}
+        {(phase === "running" || phase === "paused") && <line x1="100" y1="160" x2="100" y2={234 - botH} className="stream" />}
+        <g clipPath="url(#tm-glass)">
+          <rect x="60" y="90" width="80" height="146" className="held-field" />
+        </g>
 
-        {/* reflections on the glass surface: two fixed highlights and a slow sheen while running */}
+        {/* reflections on the glass surface: two fixed highlights and a slow sheen (frozen while held) */}
         <path d="M70 100C72 120 82 136 92 148" stroke="url(#glass-sheen)" strokeWidth="5" fill="none" strokeLinecap="round" />
         <path d="M72 226C72 206 80 192 90 182" stroke="url(#glass-sheen)" strokeWidth="5" fill="none" strokeLinecap="round" />
         <g clipPath="url(#tm-glass)">
