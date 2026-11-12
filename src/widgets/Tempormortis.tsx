@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import TitleBar from "../components/TitleBar";
+import { HourglassIcon } from "../components/Icons";
 import { SigilDefs } from "../components/Sigils";
 import { logToVault } from "../lib/vaultLog";
 
 type Phase = "idle" | "running" | "paused" | "finished";
+
+const PRESETS = [15, 25, 45, 60];
+const SEGMENTS = 24;
 
 function format(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -88,10 +92,24 @@ function Hourglass({ fraction, phase }: { fraction: number; phase: Phase }) {
           <stop offset="0" stopColor="#ffd77a" />
           <stop offset="1" stopColor="#b9782a" />
         </linearGradient>
-        <radialGradient id="stasis" cx="0.5" cy="0.5" r="0.6">
-          <stop offset="0" stopColor="#00e5ff" stopOpacity="0.55" />
-          <stop offset="1" stopColor="#00e5ff" stopOpacity="0" />
+        <clipPath id="tm-glass"><path d={GLASS} /></clipPath>
+        {/* stasis light lives inside the glass: brightest at the neck, where time is being held */}
+        <radialGradient id="stasis" cx="100" cy="163" r="72" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#e2f9ff" stopOpacity="0.85" />
+          <stop offset="0.3" stopColor="#8fdcf0" stopOpacity="0.4" />
+          <stop offset="0.7" stopColor="#5fbcd6" stopOpacity="0.12" />
+          <stop offset="1" stopColor="#5fbcd6" stopOpacity="0" />
         </radialGradient>
+        <radialGradient id="stasis-alarm" cx="100" cy="163" r="62" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#ffb3a8" stopOpacity="0.5" />
+          <stop offset="0.4" stopColor="#e5483c" stopOpacity="0.2" />
+          <stop offset="1" stopColor="#e5483c" stopOpacity="0" />
+        </radialGradient>
+        <linearGradient id="sweep" x1="0" x2="1">
+          <stop offset="0" stopColor="#e6f9ff" stopOpacity="0" />
+          <stop offset="0.5" stopColor="#e6f9ff" stopOpacity="0.16" />
+          <stop offset="1" stopColor="#e6f9ff" stopOpacity="0" />
+        </linearGradient>
         <linearGradient id="glass-sheen" x1="0" x2="1">
           <stop offset="0" stopColor="#fff" stopOpacity="0" />
           <stop offset="0.5" stopColor="#fff" stopOpacity="0.22" />
@@ -113,14 +131,26 @@ function Hourglass({ fraction, phase }: { fraction: number; phase: Phase }) {
           <circle key={x} cx={x} cy="84" r="2" fill="#f0c27b" stroke="#2a1a0c" strokeWidth="0.6" />
         ))}
 
-        {/* stasis glow and glass */}
-        <ellipse cx="100" cy="163" rx="70" ry="86" fill="url(#stasis)" className="stasis" />
+        {/* glass, then the stasis light inside it (clipped, so nothing spills past the frame) */}
         <path d={GLASS} className="glass" />
+        <g clipPath="url(#tm-glass)">
+          <rect x="60" y="90" width="80" height="146" className="stasis" />
+        </g>
         <rect clipPath="url(#tm-top)" x="0" y={163 - topH} width="200" height={topH} fill="url(#sand)" className="sand" />
         <rect clipPath="url(#tm-bottom)" x="0" y={234 - botH} width="200" height={botH} fill="url(#sand)" className="sand" />
+        {/* catch-light on each sand surface, lit by the stasis glow */}
+        {topH > 1 && <rect clipPath="url(#tm-top)" x="0" y={163 - topH} width="200" height="1.6" className="sand-glint" />}
+        {botH > 1 && <rect clipPath="url(#tm-bottom)" x="0" y={234 - botH} width="200" height="1.6" className="sand-glint" />}
         {phase === "running" && <line x1="100" y1="160" x2="100" y2={234 - botH} className="stream" />}
+
+        {/* reflections on the glass surface: two fixed highlights and a slow sheen while running */}
         <path d="M70 100C72 120 82 136 92 148" stroke="url(#glass-sheen)" strokeWidth="5" fill="none" strokeLinecap="round" />
         <path d="M72 226C72 206 80 192 90 182" stroke="url(#glass-sheen)" strokeWidth="5" fill="none" strokeLinecap="round" />
+        <g clipPath="url(#tm-glass)">
+          <g className="sweep">
+            <rect x="20" y="80" width="26" height="170" fill="url(#sweep)" transform="skewX(-18)" />
+          </g>
+        </g>
         <path d={GLASS} className="glass-edge" />
 
         <Pillar x={50} />
@@ -201,71 +231,90 @@ export default function Tempormortis() {
   }
 
   const fraction = phase === "idle" ? 0 : 1 - remaining / total;
+  const state = { idle: "Awaiting judgement", running: "Time is slowed", paused: "Stasis held", finished: "The sands have run" }[phase];
+  const lit = Math.round(fraction * SEGMENTS);
+
+  function chooseMinutes(m: number) {
+    const clamped = Math.min(180, Math.max(1, Math.round(m) || 1));
+    setMinutes(clamped);
+    setRemaining(clamped * 60);
+  }
 
   return (
-    <div className="widget tempormortis-widget">
-      <TitleBar title="Tempormortis" sigil="⧗" />
-      <main className="body center">
-        <Hourglass fraction={fraction} phase={phase} />
-
-        <div className="plaque">
-          <span className={phase === "finished" ? "clock finished" : "clock"}>
-            {format(phase === "idle" ? total : remaining)}
-          </span>
-          <span className="plaque-caption">
-            {phase === "finished" ? "The sands have run" : phase === "running" ? "Time is slowed" : phase === "paused" ? "Stasis held" : "Awaiting judgement"}
-          </span>
+    <div className="widget">
+      <TitleBar title="Tempormortis" icon={<HourglassIcon size={14} />} />
+      <main className="body">
+        <div className="relic">
+          <Hourglass fraction={fraction} phase={phase} />
         </div>
 
-        {phase === "idle" ? (
-          <div className="fields">
-            <label className="field">
-              <span>Quarry</span>
-              <input className="engraved-input" value={task} onChange={(e) => setTask(e.target.value)} placeholder="What must fall?" />
-            </label>
-            <label className="field minutes">
-              <span>Min</span>
-              <input
-                className="engraved-input"
-                type="number"
-                min={1}
-                max={180}
-                value={minutes}
-                onChange={(e) => {
-                  const m = Math.min(180, Math.max(1, Number(e.target.value) || 1));
-                  setMinutes(m);
-                  setRemaining(m * 60);
-                }}
-              />
-            </label>
+        {/* cogitator readout, after Rogue Trader's green-phosphor panels */}
+        <section className={`cogitator readout phase-${phase}`} aria-live="polite">
+          <div className="readout-head">
+            <span>Stasis field</span>
+            <span>{state}</span>
           </div>
-        ) : (
-          <p className="quarry">{task || "unnamed quarry"}</p>
+          <div className="readout-time">{format(phase === "idle" ? total : remaining)}</div>
+          <div className="segments" aria-hidden="true">
+            {Array.from({ length: SEGMENTS }, (_, i) => (
+              <span key={i} className={i < lit ? "on" : ""} />
+            ))}
+          </div>
+          {phase !== "idle" && <div className="readout-quarry">{task || "Unnamed quarry"}</div>}
+        </section>
+
+        {phase === "idle" && (
+          <div className="form">
+            <label className="field">
+              <span className="label">Quarry</span>
+              <input className="input" value={task} onChange={(e) => setTask(e.target.value)} placeholder="What must fall?" />
+            </label>
+            <div className="field">
+              <span className="label">Duration</span>
+              <div className="chips" role="group" aria-label="Minutes">
+                {PRESETS.map((m) => (
+                  <button key={m} className={m === minutes ? "chip on" : "chip"} aria-pressed={m === minutes} onClick={() => chooseMinutes(m)}>
+                    {m}
+                  </button>
+                ))}
+                <input
+                  className="input chip-input"
+                  type="number"
+                  min={1}
+                  max={180}
+                  value={PRESETS.includes(minutes) ? "" : minutes}
+                  placeholder="other"
+                  onChange={(e) => e.target.value && chooseMinutes(Number(e.target.value))}
+                  aria-label="Custom minutes"
+                />
+              </div>
+            </div>
+          </div>
         )}
 
-        <div className="row">
+        <div className="actions">
           {(phase === "idle" || phase === "paused") && (
-            <button className="primary" onClick={start}>
-              {phase === "paused" ? "Resume stasis" : "Invoke stasis"}
+            <button className="btn primary" onClick={start}>
+              {phase === "paused" ? "Resume" : "Invoke stasis"}
             </button>
           )}
           {phase === "running" && (
-            <button className="primary" onClick={() => setPhase("paused")}>
+            <button className="btn" onClick={() => setPhase("paused")}>
               Hold
             </button>
           )}
           {phase === "finished" && (
-            <button className="primary verdict" onClick={recordVerdict}>
+            <button className="btn seal" onClick={recordVerdict}>
               Record the verdict
             </button>
           )}
           {phase !== "idle" && (
-            <button className="ghost" onClick={reset}>
+            <button className="btn quiet" onClick={reset}>
               Release
             </button>
           )}
         </div>
-        {status && <p className="status">{status}</p>}
+        {status && <p className="footnote">{status}</p>}
       </main>
     </div>
   );

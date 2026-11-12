@@ -6,22 +6,23 @@
 export function SigilDefs() {
   return (
     <defs>
+      {/* Aged bronze: muted, darker than polished gold (cf. Rogue Trader's machinery trims). */}
       <linearGradient id="bronze" x1="0" x2="1" y1="0" y2="0">
-        <stop offset="0" stopColor="#3d2612" />
-        <stop offset="0.25" stopColor="#9a6230" />
-        <stop offset="0.45" stopColor="#f0c27b" />
-        <stop offset="0.6" stopColor="#c98b4a" />
-        <stop offset="1" stopColor="#3d2612" />
+        <stop offset="0" stopColor="#2b1d0f" />
+        <stop offset="0.28" stopColor="#6e4f2a" />
+        <stop offset="0.46" stopColor="#c19a5e" />
+        <stop offset="0.62" stopColor="#8a6a3a" />
+        <stop offset="1" stopColor="#2b1d0f" />
       </linearGradient>
       <linearGradient id="bronze-v" x1="0" x2="0" y1="0" y2="1">
-        <stop offset="0" stopColor="#f0c27b" />
-        <stop offset="0.5" stopColor="#a8693a" />
-        <stop offset="1" stopColor="#4a2f18" />
+        <stop offset="0" stopColor="#c19a5e" />
+        <stop offset="0.5" stopColor="#7a5a30" />
+        <stop offset="1" stopColor="#33230f" />
       </linearGradient>
       <linearGradient id="brass" x1="0" x2="0" y1="0" y2="1">
-        <stop offset="0" stopColor="#ffe3a0" />
-        <stop offset="0.45" stopColor="#c9a24b" />
-        <stop offset="1" stopColor="#5e4718" />
+        <stop offset="0" stopColor="#d9c08a" />
+        <stop offset="0.45" stopColor="#9c7d42" />
+        <stop offset="1" stopColor="#4a3a1a" />
       </linearGradient>
       <radialGradient id="bone" cx="0.4" cy="0.35" r="0.8">
         <stop offset="0" stopColor="#fbf3dc" />

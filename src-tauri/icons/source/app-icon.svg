@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!--
+    Dark Cells Widgets app icon (source for `npm run tauri icon`).
+    A cogitator monitor showing a Mechanicus cog-skull, half bone and half
+    machine, in green phosphor, after the Space Marine 2 cogitator screens.
+    Bold shapes so it still reads at 16-32px.
+  -->
+  <defs>
+    <linearGradient id="bezel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3c4139"/>
+      <stop offset="0.5" stop-color="#23261f"/>
+      <stop offset="1" stop-color="#121410"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#c9a76a"/>
+      <stop offset="0.5" stop-color="#7d5c30"/>
+      <stop offset="1" stop-color="#3a2914"/>
+    </linearGradient>
+    <radialGradient id="screen" cx="512" cy="470" r="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0f3517"/>
+      <stop offset="0.6" stop-color="#06180a"/>
+      <stop offset="1" stop-color="#020703"/>
+    </radialGradient>
+    <radialGradient id="bloom" cx="512" cy="455" r="300" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5dff7a" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#5dff7a" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="scan" width="8" height="8" patternUnits="userSpaceOnUse">
+      <rect width="8" height="3" fill="#000" fill-opacity="0.35"/>
+    </pattern>
+    <clipPath id="screen-clip">
+      <rect x="150" y="150" width="724" height="640" rx="56"/>
+    </clipPath>
+    <clipPath id="right-half">
+      <rect x="512" y="0" width="512" height="1024"/>
+    </clipPath>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="9" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- monitor casing: bronze rim, iron bezel, screws -->
+  <rect x="48" y="48" width="928" height="928" rx="190" fill="url(#rim)"/>
+  <rect x="80" y="80" width="864" height="864" rx="162" fill="url(#bezel)"/>
+  <g fill="#8a6a3a" stroke="#1a120a" stroke-width="5">
+    <circle cx="150" cy="872" r="16"/>
+    <circle cx="874" cy="872" r="16"/>
+  </g>
+  <!-- status lamp and grille under the screen -->
+  <circle cx="512" cy="872" r="18" fill="#7dff8f" filter="url(#glow)"/>
+  <g stroke="#0b0c0a" stroke-width="10" stroke-linecap="round">
+    <path d="M300 872H420M604 872H724"/>
+  </g>
+
+  <!-- screen -->
+  <rect x="142" y="142" width="740" height="656" rx="62" fill="#000"/>
+  <g clip-path="url(#screen-clip)">
+    <rect x="150" y="150" width="724" height="640" fill="url(#screen)"/>
+    <rect x="150" y="150" width="724" height="640" fill="url(#bloom)"/>
+
+    <!-- faint circuitry -->
+    <g stroke="#2e8a3c" stroke-opacity="0.35" stroke-width="5" fill="none">
+      <path d="M190 300H300L340 340V420M834 300H724L684 340V420M190 640H290L330 600M834 640H734L694 600"/>
+    </g>
+
+    <!-- header and footer bars, chamfered frame lines -->
+    <g fill="#5dff7a" fill-opacity="0.55">
+      <rect x="196" y="190" width="150" height="16" rx="3"/>
+      <rect x="362" y="190" width="70" height="16" rx="3"/>
+      <rect x="720" y="190" width="108" height="16" rx="3"/>
+    </g>
+    <path d="M196 226H828" stroke="#5dff7a" stroke-opacity="0.45" stroke-width="5"/>
+    <path d="M220 690H804L780 744H244Z" fill="none" stroke="#5dff7a" stroke-opacity="0.8" stroke-width="7"/>
+    <g fill="#7dff8f" filter="url(#glow)">
+      <!-- +++  =====  +++ -->
+      <path d="M262 711h12v-12h10v12h12v10h-12v12h-10v-12h-12Z"/>
+      <path d="M306 711h12v-12h10v12h12v10h-12v12h-10v-12h-12Z"/>
+      <path d="M684 711h12v-12h10v12h12v10h-12v12h-10v-12h-12Z"/>
+      <path d="M728 711h12v-12h10v12h12v10h-12v12h-10v-12h-12Z"/>
+      <rect x="400" y="708" width="20" height="20"/>
+      <rect x="430" y="700" width="20" height="36"/>
+      <rect x="460" y="712" width="20" height="12"/>
+      <rect x="490" y="696" width="20" height="44"/>
+      <rect x="520" y="704" width="20" height="28"/>
+      <rect x="550" y="710" width="20" height="16"/>
+      <rect x="580" y="700" width="20" height="36"/>
+      <rect x="610" y="708" width="20" height="20"/>
+    </g>
+
+    <!-- cog-skull -->
+    <g filter="url(#glow)" transform="translate(512 445) scale(0.86) translate(-512 -455)">
+      <g fill="#6dff84" transform="translate(512 455)">
+        <circle r="196"/>
+        <g id="teeth">
+          <rect x="-34" y="-246" width="68" height="70" rx="10"/>
+          <rect x="-34" y="-246" width="68" height="70" rx="10" transform="rotate(30)"/>
+          <rect x="-34" y="-246" width="68" height="70" rx="10" transform="rotate(60)"/>
+          <rect x="-34" y="-246" width="68" height="70" rx="10" transform="rotate(90)"/>
+          <rect x="-34" y="-246" width="68" height="70" rx="10" transform="rotate(120)"/>
+          <rect x="-34" y="-246" width="68" height="70" rx="10" transform="rotate(150)"/>
+          <rect x="-34" y="-246" width="68" height="70" rx="10" transform="rotate(180)"/>
+          <rect x="-34" y="-246" width="68" height="70" rx="10" transform="rotate(210)"/>
+          <rect x="-34" y="-246" width="68" height="70" rx="10" transform="rotate(240)"/>
+          <rect x="-34" y="-246" width="68" height="70" rx="10" transform="rotate(270)"/>
+          <rect x="-34" y="-246" width="68" height="70" rx="10" transform="rotate(300)"/>
+          <rect x="-34" y="-246" width="68" height="70" rx="10" transform="rotate(330)"/>
+        </g>
+      </g>
+      <!-- skull cut out of the cog (dark) -->
+      <path transform="translate(402 337) scale(11)" fill="#04140a"
+        d="M10 1C4.8 1 1.5 4.6 1.5 9.2c0 2.8 1.2 4.6 2.8 5.6V18c0 1.6 1.2 3 2.8 3h5.8c1.6 0 2.8-1.4 2.8-3v-3.2c1.6-1 2.8-2.8 2.8-5.6C18.5 4.6 15.2 1 10 1Z"/>
+      <!-- bone half (left): eye socket, nose, teeth -->
+      <g fill="#6dff84">
+        <ellipse cx="474" cy="447" rx="30" ry="32"/>
+        <path d="M512 476 496 506H512Z"/>
+        <rect x="462" y="534" width="12" height="40" rx="4"/>
+        <rect x="488" y="534" width="12" height="40" rx="4"/>
+      </g>
+      <!-- machine half (right): lens eye, plate seams, vent teeth -->
+      <g clip-path="url(#right-half)">
+        <circle cx="550" cy="447" r="34" fill="none" stroke="#6dff84" stroke-width="10"/>
+        <circle cx="550" cy="447" r="12" fill="#6dff84"/>
+        <path d="M512 476 528 506H512Z" fill="#6dff84"/>
+        <path d="M520 370H588M598 400V500M520 520H596" stroke="#6dff84" stroke-width="8" fill="none"/>
+        <rect x="524" y="534" width="12" height="40" rx="2" fill="#6dff84"/>
+        <rect x="550" y="534" width="12" height="40" rx="2" fill="#6dff84"/>
+      </g>
+      <!-- seam down the middle -->
+      <path d="M512 340V586" stroke="#04140a" stroke-width="8"/>
+    </g>
+
+    <!-- scanlines and glass sheen -->
+    <rect x="150" y="150" width="724" height="640" fill="url(#scan)"/>
+    <path d="M190 190C320 168 520 166 700 180" stroke="#fff" stroke-opacity="0.08" stroke-width="26" fill="none" stroke-linecap="round"/>
+  </g>
+  <rect x="150" y="150" width="724" height="640" rx="56" fill="none" stroke="#000" stroke-width="10"/>
+</svg>

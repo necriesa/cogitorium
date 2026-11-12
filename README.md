@@ -10,6 +10,20 @@ Warhammer 40k-themed desktop productivity widgets for tracking, managing and upd
 
 Inspired by the desktop widgets in Tina Huang's [Learn 10X Faster In 10 Minutes](https://www.youtube.com/watch?v=sbmP6i-MChk).
 
+## Design
+
+The visual language follows Owlcat's *Warhammer 40,000: Rogue Trader* UI, and the tokens and rules are at the top of `src/styles.css`:
+
+- **Cogitator screens:** green-phosphor panels (after the Mechanicus screens in *Space Marine 2*) for everything the widgets show. The Auto Quill is a handheld **data slate**: an iron casing with a grille, an activity lamp and a purity seal, a screen, and rune keys underneath. Everything else is a dark gunmetal frame.
+- **Bronze** is used only for trims, rivets and the active state, never for large fills.
+- **Four type roles:**
+  - Cormorant SC for labels and buttons
+  - EB Garamond for reading
+  - VT323 for cogitator readouts
+- **App icon:** a cogitator monitor showing a Mechanicus cog-skull, half bone and half machine. The source is `src-tauri/icons/source/app-icon.svg`; regenerate the sizes with `npx tauri icon src-tauri/icons/source/app-icon.svg`, then touch `src-tauri/build.rs` so the next build re-embeds it.
+- **Spacing** uses a 4px grid. Animations respect `prefers-reduced-motion`.
+- The Tempormortis is drawn after Games Workshop's Judiciar model.
+
 ## Stack
 
 [Tauri 2](https://v2.tauri.app/) with a React 19 + TypeScript + Vite frontend. It is one app with two frameless windows (`auto-quill` and `tempormortis`). Both windows load the same page, and `src/main.tsx` picks the widget from the window's label.
@@ -26,7 +40,11 @@ Inspired by the desktop widgets in Tina Huang's [Learn 10X Faster In 10 Minutes]
      ```
    - Node.js LTS.
 2. `npm install`
-3. Copy `.env.example` to `.env` and set `DARK_CELLS_VAULT` to your vault's absolute path.
+3. Optional, for development only: copy `.env.example` to `.env` and set `DARK_CELLS_VAULT`. Without it, the app asks for the vault folder on first run.
+
+## Vault folder
+
+On first run the app looks in Obsidian's own vault list (`%APPDATA%\obsidian\obsidian.json` on Windows) and uses the vault Obsidian has open, or your only vault. That choice is saved in `settings.json` in the app's config folder (`%APPDATA%\com.necriesa.darkcellswidgets\`). The **Choose vault folder** screen appears only when it can't tell, for example when you have several vaults and none is open. You can change the vault any time with the folder button in the title bar, and both widgets switch together. Order of precedence: saved choice, then `DARK_CELLS_VAULT` (dev `.env`), then Obsidian's open vault.
 
 ## Run
 
@@ -34,7 +52,7 @@ Inspired by the desktop widgets in Tina Huang's [Learn 10X Faster In 10 Minutes]
 |---|---|
 | `npm run tauri dev` | Runs the desktop app with hot reload. The first run compiles the Rust crates, which takes a few minutes. |
 | `npm run dev` | Runs only the frontend in a browser at http://localhost:1420. Add `?widget=tempormortis` to switch widget. Logs go to the browser console instead of the vault. |
-| `npm run tauri build` | Builds the release app and installers into `src-tauri/target/release/bundle/`. |
+| `npm run tauri build` | Builds the release app (`src-tauri/target/release/dark-cells-widgets.exe`) and installers (`src-tauri/target/release/bundle/msi/` and `bundle/nsis/`). |
 | `cd src-tauri && cargo test` | Runs the Rust unit tests. |
 
 ## What lands in the vault

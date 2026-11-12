@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import TitleBar from "../components/TitleBar";
+import { QuillIcon } from "../components/Icons";
 import { SigilDefs } from "../components/Sigils";
 import { logToVault, today } from "../lib/vaultLog";
 import { breakDown, fileNameFor, fromMarkdown, toMarkdown, type Scroll } from "../lib/scroll";
@@ -9,45 +10,7 @@ import { listScrolls, loadScroll, saveScroll } from "../lib/scrollStore";
 
 const ACTIVE_KEY = "auto-quill.active";
 
-/**
- * The auto-quill mechanism: a riveted brass housing with a Mechanicus cog,
- * an ink well, and an articulated arm holding a quill over the scroll.
- * `writing` makes the arm scratch for a moment.
- */
-function Mechanism({ writing }: { writing: boolean }) {
-  return (
-    <svg className={writing ? "mechanism writing" : "mechanism"} viewBox="0 0 320 92" aria-hidden="true">
-      <rect x="6" y="8" width="132" height="54" rx="6" fill="url(#brass)" stroke="#3b2a14" strokeWidth="1.2" />
-      <rect x="14" y="16" width="116" height="38" rx="3" fill="#1a130b" stroke="#3b2a14" />
-      {[0, 1, 2, 3, 4, 5].map((i) => (
-        <rect key={i} x={22 + i * 11} y="24" width="6" height="22" rx="2" fill="#2c2114" stroke="#5e4718" strokeWidth="0.6" />
-      ))}
-      <use href="#cog" x="92" y="19" width="32" height="32" className="cog-spin" />
-      {[12, 132].flatMap((x) =>
-        [12, 58].map((y) => <circle key={`${x}-${y}`} cx={x} cy={y} r="2" fill="#ffe3a0" stroke="#3b2a14" strokeWidth="0.5" />),
-      )}
-      <path d="M250 62h36l-4 22h-28Z" fill="#14100c" stroke="url(#brass)" strokeWidth="2" />
-      <rect x="246" y="58" width="44" height="6" rx="2" fill="url(#brass)" stroke="#3b2a14" strokeWidth="0.6" />
-      <g className="arm">
-        <circle cx="138" cy="35" r="8" fill="url(#brass)" stroke="#3b2a14" />
-        <rect x="136" y="31" width="64" height="8" rx="4" fill="url(#brass)" stroke="#3b2a14" transform="rotate(14 138 35)" />
-        <g className="forearm">
-          <circle cx="200" cy="50" r="6" fill="url(#brass)" stroke="#3b2a14" />
-          <rect x="198" y="47" width="46" height="6" rx="3" fill="url(#brass)" stroke="#3b2a14" transform="rotate(32 200 50)" />
-          <g transform="translate(238 74) rotate(-28)">
-            <path d="M0 0C10-12 30-34 64-46C46-28 22-10 2 4Z" fill="#efe6d2" stroke="#6d6250" strokeWidth="0.7" />
-            {[12, 22, 32, 42, 52].map((x) => (
-              <path key={x} d={`M${x} ${-x * 0.62}l6 -7`} stroke="#a89f8a" strokeWidth="0.6" />
-            ))}
-            <path d="M2 4-10 14" stroke="#2b1d12" strokeWidth="2" strokeLinecap="round" />
-          </g>
-        </g>
-      </g>
-    </svg>
-  );
-}
-
-/** A red wax purity seal stamped over a completed subtask. */
+/** A red wax purity seal, stuck on the slate's casing. */
 function WaxSeal() {
   return (
     <svg className="seal" viewBox="0 0 28 28" aria-hidden="true">
@@ -71,8 +34,10 @@ function readActive(): Scroll | null {
 }
 
 /**
- * Auto Quill: paste a task (prose or bullets), the quill breaks it into
- * subtasks, and the scroll is kept as a Markdown checklist in the vault.
+ * Auto Quill, presented as a data slate: an iron handheld casing around a
+ * green cogitator screen, with rune keys underneath. Paste a task (prose or
+ * bullets), the slate breaks it into subtasks, and the scroll is kept as a
+ * Markdown checklist in the vault.
  * Ticks here update the note; ticks made in Obsidian come back when the
  * widget is focused.
  */
@@ -138,7 +103,7 @@ export default function AutoQuill() {
     try {
       await saveScroll(next.file, toMarkdown(next));
       await logToVault("Auto Quill", ...logFields);
-      setStatus(`Inscribed in Scrolls/${next.file}`);
+      setStatus(`Inscribed · Scrolls/${next.file}`);
     } catch (err) {
       setStatus(`The quill faltered: ${String(err)}`);
     }
@@ -170,55 +135,74 @@ export default function AutoQuill() {
 
   const done = scroll?.items.filter((i) => i.done).length ?? 0;
   const total = scroll?.items.length ?? 0;
+  const complete = !!scroll && total > 0 && done === total;
+  const footer = writing ? "Inscribing" : status || (scroll ? "Scriptor ready" : "Awaiting dictation");
+  const pad = (n: number) => String(n).padStart(2, "0");
 
   return (
-    <div className="widget auto-quill-widget">
+    <div className="widget">
       <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
         <SigilDefs />
       </svg>
-      <TitleBar title="Auto Quill" sigil="✒" />
-      <main className="body quill-body">
-        <Mechanism writing={writing} />
+      <TitleBar title="Auto Quill" icon={<QuillIcon size={14} />} />
+      <main className="slate">
+        {/* casing top: speaker grille, activity lamp, maker's plate, purity seal */}
+        <div className="slate-top">
+          <span className="grille" aria-hidden="true" />
+          <span className={writing ? "lamp busy" : "lamp"} aria-hidden="true" />
+          <span className="slate-plate">Data-slate · Scriptorum</span>
+          <span className="casing-seal" aria-hidden="true">
+            <WaxSeal />
+          </span>
+        </div>
 
-        <div className="scroll">
-          <div className="roller" />
-          <div className="parchment-sheet">
+        <section className="cogitator screen">
+          <header className="screen-head">
+            <span>{scroll ? "Scroll" : "Dictation"}</span>
+            <span>{scroll ? `${pad(done)}/${pad(total)}` : preview ? `${pad(preview.items.length)} parsed` : "--"}</span>
+          </header>
+
+          <div className="screen-body">
             {!scroll ? (
               <>
-                <input
-                  className="scroll-title-input"
-                  value={taskName}
-                  onChange={(e) => setTaskName(e.target.value)}
-                  placeholder="Task (optional)"
-                  aria-label="Task name"
-                />
-                <textarea
-                  className="dictation"
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  placeholder={"Paste the task. Prose is broken into steps; bullets stay as they are.\n\ne.g. Set up the UE5 project, then build the main menu in CommonUI. After that test gamepad navigation."}
-                  aria-label="Task text"
-                />
+                <label className="term-field">
+                  <span className="term-label">Designation</span>
+                  <input
+                    className="term-input"
+                    value={taskName}
+                    onChange={(e) => setTaskName(e.target.value)}
+                    placeholder="task name (optional)"
+                    aria-label="Task name"
+                  />
+                </label>
+                <label className="term-field">
+                  <span className="term-label">Dictate</span>
+                  <textarea
+                    className="term-input term-area"
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    placeholder={"> paste the task. prose is split into steps; bullet lists are kept."}
+                    aria-label="Task text"
+                  />
+                </label>
                 {preview && preview.items.length > 0 && (
-                  <div className="preview">
-                    <p className="preview-head">
-                      <span className="drop-cap small">{preview.title.charAt(0)}</span>
-                      {preview.title.slice(1)} · {preview.items.length} subtasks
-                    </p>
-                    <ul>
+                  <div className="parsed">
+                    <p className="term-label">Parsed · {preview.title}</p>
+                    <ol>
                       {preview.items.map((it, i) => (
-                        <li key={i} style={{ paddingLeft: it.depth * 14 }}>
+                        <li key={i} style={{ paddingLeft: it.depth * 16 }}>
+                          <span className="idx">{pad(i + 1)}</span>
                           {it.text}
                         </li>
                       ))}
-                    </ul>
+                    </ol>
                   </div>
                 )}
                 {!preview && earlier.length > 0 && (
-                  <div className="earlier">
-                    <p className="preview-head">Unroll an earlier scroll</p>
+                  <div className="archive">
+                    <p className="term-label">Archive</p>
                     {earlier.slice(0, 6).map((f) => (
-                      <button key={f} className="link" onClick={() => unroll(f)}>
+                      <button key={f} className="archive-entry" onClick={() => unroll(f)}>
                         {f.replace(/\.md$/, "")}
                       </button>
                     ))}
@@ -227,46 +211,45 @@ export default function AutoQuill() {
               </>
             ) : (
               <>
-                <h1 className="scroll-title">
-                  <span className="drop-cap">{scroll.title.charAt(0)}</span>
-                  {scroll.title.slice(1)}
-                </h1>
+                <h1 className="slate-title">{scroll.title}</h1>
+                <div className="meter" aria-hidden="true">
+                  <span style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
+                </div>
                 <ol className="rites">
                   {scroll.items.map((item, i) => (
-                    <li key={i} className={item.done ? "done" : ""} style={{ marginLeft: item.depth * 18 }}>
+                    <li key={i} className={item.done ? "done" : ""} style={{ paddingLeft: item.depth * 18 }}>
                       <label>
                         <input type="checkbox" checked={item.done} onChange={() => toggle(i)} />
-                        <span className="rite-mark">{item.done ? <WaxSeal /> : <span className="rite-box" />}</span>
+                        <span className="rite-box" aria-hidden="true" />
                         <span className="rite-text">{item.text}</span>
                       </label>
                     </li>
                   ))}
                 </ol>
+                {complete && <p className="complete">+++ Rites complete +++</p>}
               </>
             )}
           </div>
-          <div className="roller" />
-          {scroll && (
-            <div className="ribbon" title={`${done} of ${total} subtasks complete`}>
-              <span>
-                {done} / {total}
-              </span>
-            </div>
-          )}
-        </div>
 
-        <div className="row">
+          <footer className={writing ? "screen-foot writing" : "screen-foot"}>
+            <span>+++</span>
+            <span className="foot-text">{footer}</span>
+            <span>+++</span>
+          </footer>
+        </section>
+
+        {/* rune keys */}
+        <div className="keys">
           {!scroll ? (
-            <button className="primary" onClick={seal} disabled={!preview || preview.items.length === 0}>
-              Seal the scroll
+            <button className="key lit" onClick={seal} disabled={!preview || preview.items.length === 0}>
+              Seal
             </button>
           ) : (
-            <button className="ghost" onClick={() => setScroll(null)}>
-              New scroll
+            <button className="key" onClick={() => setScroll(null)}>
+              New
             </button>
           )}
         </div>
-        {status && <p className="status">{status}</p>}
       </main>
     </div>
   );
