@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-import TitleBar from "../components/TitleBar";
-import { HourglassIcon } from "../components/Icons";
+import { useEffect, useState } from "react";
 import { SigilDefs } from "../components/Sigils";
 import { logToVault } from "../lib/vaultLog";
+import { remainingMs, useSharedTimer } from "../lib/timer";
 
 type Phase = "idle" | "running" | "paused" | "finished";
 
@@ -13,28 +12,6 @@ function format(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
-/** A low tolling chime (Web Audio, no sound files). */
-function toll() {
-  try {
-    const ctx = new AudioContext();
-    [220, 165, 110].forEach((freq, i) => {
-      const t = ctx.currentTime + i * 0.55;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "triangle";
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.0001, t);
-      gain.gain.exponentialRampToValueAtTime(0.35, t + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(t);
-      osc.stop(t + 1.5);
-    });
-  } catch {
-    /* no audio device: the visual verdict still shows */
-  }
 }
 
 // Glass geometry (viewBox 0 0 200 300). The neck is at y = 163.
@@ -193,51 +170,38 @@ function Hourglass({ fraction, phase }: { fraction: number; phase: Phase }) {
 
 /**
  * Chrono-Siphon: a Pomodoro timer in a gothic stasis hourglass.
+ * The timer itself lives in the backend (lib/timer.ts), so this panel can be
+ * shown in the main app and in a popped-out widget at the same time.
  * "Invoke stasis" starts it; when the sands run out it tolls, and
  * "Record the verdict" logs the session to the vault.
  */
 export default function ChronoSiphon() {
+  const { timer, now, start, pause, resume, reset } = useSharedTimer({ watch: true });
   const [task, setTask] = useState("");
   const [minutes, setMinutes] = useState(25);
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [remaining, setRemaining] = useState(25 * 60);
   const [status, setStatus] = useState("");
-  const endAt = useRef(0);
 
-  const total = minutes * 60;
-
-  // Tick against a wall-clock end time so the timer stays accurate if the window is throttled.
+  // Start the form from the last timer's task and length.
   useEffect(() => {
-    if (phase !== "running") return;
-    const id = window.setInterval(() => {
-      const left = Math.max(0, Math.round((endAt.current - Date.now()) / 1000));
-      setRemaining(left);
-      if (left === 0) {
-        setPhase("finished");
-        toll();
-      }
-    }, 250);
-    return () => window.clearInterval(id);
-  }, [phase]);
+    if (timer && timer.phase === "idle") {
+      setTask((t) => t || timer.task);
+      setMinutes(timer.minutes);
+    }
+    // only when the timer first loads or returns to idle
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timer?.phase]);
 
-  function start() {
-    const secs = phase === "paused" ? remaining : total;
-    endAt.current = Date.now() + secs * 1000;
-    setRemaining(secs);
-    setPhase("running");
-    setStatus("");
-  }
-
-  function reset() {
-    setPhase("idle");
-    setRemaining(total);
-  }
+  const phase: Phase = timer?.phase ?? "idle";
+  const shownMinutes = phase === "idle" ? minutes : (timer?.minutes ?? minutes);
+  const total = shownMinutes * 60;
+  const remaining = timer && phase !== "idle" ? Math.round(remainingMs(timer, now) / 1000) : total;
 
   async function recordVerdict() {
+    if (!timer) return;
     try {
-      const file = await logToVault("Chrono-Siphon", `${minutes} min`, task || "unnamed quarry");
+      const file = await logToVault("Chrono-Siphon", `${timer.minutes} min`, timer.task || "unnamed quarry");
       setStatus(`Verdict recorded in ${file.split(/[\\/]/).pop()}`);
-      reset();
+      await reset();
     } catch (err) {
       setStatus(`The record failed: ${String(err)}`);
     }
@@ -248,87 +212,93 @@ export default function ChronoSiphon() {
   const lit = Math.round(fraction * SEGMENTS);
 
   function chooseMinutes(m: number) {
-    const clamped = Math.min(180, Math.max(1, Math.round(m) || 1));
-    setMinutes(clamped);
-    setRemaining(clamped * 60);
+    setMinutes(Math.min(180, Math.max(1, Math.round(m) || 1)));
   }
 
   return (
-    <div className="widget">
-      <TitleBar title="Chrono-Siphon" icon={<HourglassIcon size={14} />} />
-      <main className="body">
-        <div className="relic">
-          <Hourglass fraction={fraction} phase={phase} />
+    <main className="body">
+      <div className="relic">
+        <Hourglass fraction={fraction} phase={phase} />
+      </div>
+
+      {/* cogitator readout, after Rogue Trader's green-phosphor panels */}
+      <section className={`cogitator readout phase-${phase}`} aria-live="polite">
+        <div className="readout-head">
+          <span>Stasis field</span>
+          <span>{state}</span>
         </div>
+        <div className="readout-time">{format(remaining)}</div>
+        <div className="segments" aria-hidden="true">
+          {Array.from({ length: SEGMENTS }, (_, i) => (
+            <span key={i} className={i < lit ? "on" : ""} />
+          ))}
+        </div>
+        {phase !== "idle" && <div className="readout-quarry">{timer?.task || "Unnamed quarry"}</div>}
+      </section>
 
-        {/* cogitator readout, after Rogue Trader's green-phosphor panels */}
-        <section className={`cogitator readout phase-${phase}`} aria-live="polite">
-          <div className="readout-head">
-            <span>Stasis field</span>
-            <span>{state}</span>
-          </div>
-          <div className="readout-time">{format(phase === "idle" ? total : remaining)}</div>
-          <div className="segments" aria-hidden="true">
-            {Array.from({ length: SEGMENTS }, (_, i) => (
-              <span key={i} className={i < lit ? "on" : ""} />
-            ))}
-          </div>
-          {phase !== "idle" && <div className="readout-quarry">{task || "Unnamed quarry"}</div>}
-        </section>
-
-        {phase === "idle" && (
-          <div className="form">
-            <label className="field">
-              <span className="label">Quarry</span>
-              <input className="input" value={task} onChange={(e) => setTask(e.target.value)} placeholder="What must fall?" />
-            </label>
-            <div className="field">
-              <span className="label">Duration</span>
-              <div className="chips" role="group" aria-label="Minutes">
-                {PRESETS.map((m) => (
-                  <button key={m} className={m === minutes ? "chip on" : "chip"} aria-pressed={m === minutes} onClick={() => chooseMinutes(m)}>
-                    {m}
-                  </button>
-                ))}
-                <input
-                  className="input chip-input"
-                  type="number"
-                  min={1}
-                  max={180}
-                  value={PRESETS.includes(minutes) ? "" : minutes}
-                  placeholder="other"
-                  onChange={(e) => e.target.value && chooseMinutes(Number(e.target.value))}
-                  aria-label="Custom minutes"
-                />
-              </div>
+      {phase === "idle" && (
+        <div className="form">
+          <label className="field">
+            <span className="label">Quarry</span>
+            <input className="input" value={task} onChange={(e) => setTask(e.target.value)} placeholder="What must fall?" />
+          </label>
+          <div className="field">
+            <span className="label">Duration</span>
+            <div className="chips" role="group" aria-label="Minutes">
+              {PRESETS.map((m) => (
+                <button key={m} className={m === minutes ? "chip on" : "chip"} aria-pressed={m === minutes} onClick={() => chooseMinutes(m)}>
+                  {m}
+                </button>
+              ))}
+              <input
+                className="input chip-input"
+                type="number"
+                min={1}
+                max={180}
+                value={PRESETS.includes(minutes) ? "" : minutes}
+                placeholder="other"
+                onChange={(e) => e.target.value && chooseMinutes(Number(e.target.value))}
+                aria-label="Custom minutes"
+              />
             </div>
           </div>
-        )}
-
-        <div className="actions">
-          {(phase === "idle" || phase === "paused") && (
-            <button className="btn primary" onClick={start}>
-              {phase === "paused" ? "Resume" : "Invoke stasis"}
-            </button>
-          )}
-          {phase === "running" && (
-            <button className="btn" onClick={() => setPhase("paused")}>
-              Hold
-            </button>
-          )}
-          {phase === "finished" && (
-            <button className="btn seal" onClick={recordVerdict}>
-              Record the verdict
-            </button>
-          )}
-          {phase !== "idle" && (
-            <button className="btn quiet" onClick={reset}>
-              Release
-            </button>
-          )}
         </div>
-        {status && <p className="footnote">{status}</p>}
-      </main>
-    </div>
+      )}
+
+      <div className="actions">
+        {phase === "idle" && (
+          <button
+            className="btn primary"
+            onClick={() => {
+              setStatus("");
+              void start(task, minutes);
+            }}
+          >
+            Invoke stasis
+          </button>
+        )}
+        {phase === "paused" && (
+          <button className="btn primary" onClick={() => void resume()}>
+            Resume
+          </button>
+        )}
+        {phase === "running" && (
+          <button className="btn" onClick={() => void pause()}>
+            Hold
+          </button>
+        )}
+        {phase === "finished" && (
+          <button className="btn seal" onClick={recordVerdict}>
+            Record the verdict
+          </button>
+        )}
+        {phase !== "idle" && (
+          <button className="btn quiet" onClick={() => void reset()}>
+            Release
+          </button>
+        )}
+      </div>
+      {status && <p className="footnote">{status}</p>}
+    </main>
   );
 }

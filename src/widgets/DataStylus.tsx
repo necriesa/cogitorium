@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import TitleBar from "../components/TitleBar";
-import { StylusIcon } from "../components/Icons";
-import { SigilDefs } from "../components/Sigils";
 import { logToVault, today } from "../lib/vaultLog";
 import { breakDown, fileNameFor, fromMarkdown, toMarkdown, type Scroll } from "../lib/scroll";
 import { listScrolls, loadScroll, saveScroll } from "../lib/scrollStore";
+import { emitApp, onApp } from "../lib/events";
 
 // Storage keys keep the widget's pre-0.3 name (Auto Quill) so an open scroll survives the rename.
 const ACTIVE_KEY = "auto-quill.active";
@@ -40,7 +38,8 @@ function readActive(): Scroll | null {
  * bullets), the slate breaks it into subtasks, and the scroll is kept as a
  * Markdown checklist in the vault.
  * Ticks here update the note; ticks made in Obsidian come back when the
- * widget is focused.
+ * window is focused. The open scroll is shared between the main app and a
+ * popped-out widget through the "scroll-changed" event.
  */
 export default function DataStylus() {
   const [scroll, setScroll] = useState<Scroll | null>(readActive);
@@ -92,6 +91,15 @@ export default function DataStylus() {
     if (!scroll) listScrolls().then(setEarlier).catch(() => setEarlier([]));
   }, [scroll]);
 
+  // Another window opened, changed or closed the scroll.
+  useEffect(() => onApp<Scroll | null>("scroll-changed", (next) => setScroll(next ?? null)), []);
+
+  /** Shows `next` here and in every other window. */
+  function show(next: Scroll | null) {
+    setScroll(next);
+    void emitApp("scroll-changed", next);
+  }
+
   function scratch() {
     window.clearTimeout(writeTimer.current);
     setWriting(true);
@@ -100,7 +108,7 @@ export default function DataStylus() {
 
   async function persist(next: Scroll, ...logFields: string[]) {
     scratch();
-    setScroll(next);
+    show(next);
     try {
       await saveScroll(next.file, toMarkdown(next));
       await logToVault("Data Stylus", ...logFields);
@@ -131,7 +139,7 @@ export default function DataStylus() {
 
   async function unroll(file: string) {
     const text = await loadScroll(file);
-    if (text != null) setScroll(fromMarkdown(text, file, today()));
+    if (text != null) show(fromMarkdown(text, file, today()));
   }
 
   const done = scroll?.items.filter((i) => i.done).length ?? 0;
@@ -141,12 +149,7 @@ export default function DataStylus() {
   const pad = (n: number) => String(n).padStart(2, "0");
 
   return (
-    <div className="widget">
-      <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
-        <SigilDefs />
-      </svg>
-      <TitleBar title="Data Stylus" icon={<StylusIcon size={14} />} />
-      <main className="slate">
+    <main className="slate">
         {/* casing top: speaker grille, activity lamp, maker's plate, purity seal */}
         <div className="slate-top">
           <span className="grille" aria-hidden="true" />
@@ -246,12 +249,11 @@ export default function DataStylus() {
               Seal
             </button>
           ) : (
-            <button className="key" onClick={() => setScroll(null)}>
+            <button className="key" onClick={() => show(null)}>
               New
             </button>
           )}
         </div>
-      </main>
-    </div>
+    </main>
   );
 }

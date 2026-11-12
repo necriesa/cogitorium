@@ -1,12 +1,14 @@
 # Cogitorium
 
-Gothic sci-fi desktop productivity widgets, themed on Warhammer 40,000, for tracking, managing and updating tasks. Every action is logged as Markdown in an Obsidian vault.
+A gothic sci-fi personal productivity app, themed on Warhammer 40,000, for tracking, managing and updating tasks. Every action is logged as Markdown in an Obsidian vault.
 
-| Widget | What it does |
+It is **one app** with three sections, and on the desktop any section can also be **popped out as a small widget window**:
+
+| Section | What it does |
 |---|---|
+| **Cogitator** (home) | Dashboard of your record, counted by the app from the vault logs: today's focus and sessions, streak, the last 7 days, where the time went, the live timer, the open scroll, and stalled scrolls (idle 7+ days) with their next item. For questions and weekly reviews there is also a `/cogitator` Claude skill in the vault, which uses `scripts/cogitator_stats.py`. |
 | **Data Stylus** ✎ | Paste a task. Prose is broken into subtasks (on sentences, semicolons, "then" and "after that"); bullet or checkbox lists are kept as they are, nesting included. Sealing writes a Markdown checklist to the vault. Ticks update that note, and ticks made in Obsidian come back when you focus the widget. |
 | **Chrono-Siphon** ⧗ | A Pomodoro timer drawn as a gothic stasis hourglass: bronze frame, skull finial, winged-skull cap, crux pendant. Name the quarry, set the minutes, invoke stasis, and record the verdict when the sands run out. |
-| **Cogitator** | A `/cogitator` Claude skill in the vault. It runs `scripts/cogitator_stats.py` for the numbers, then answers questions ("what was I doing two weeks ago?") or writes a weekly review. |
 
 Inspired by the desktop widgets in Tina Huang's [Learn 10X Faster In 10 Minutes](https://www.youtube.com/watch?v=sbmP6i-MChk).
 
@@ -34,7 +36,12 @@ The visual language follows Owlcat's *Warhammer 40,000: Rogue Trader* UI, and th
 
 ## Stack
 
-[Tauri 2](https://v2.tauri.app/) with a React 19 + TypeScript + Vite frontend. It is one app with two frameless windows (`data-stylus` and `chrono-siphon`). Both windows load the same page, and `src/main.tsx` picks the widget from the window's label.
+[Tauri 2](https://v2.tauri.app/) with a React 19 + TypeScript + Vite frontend.
+
+- **Windows:** the `main` window is the full app. On the desktop, the **Pop out** button on a section opens it as a widget window (`data-stylus` or `chrono-siphon`). Every window loads the same page, and `src/main.tsx` picks what to show from the window's label.
+- **Remembered pop-outs:** popped-out widgets are saved in `settings.json` and reopened on the next launch. Closing the main window quits the app and keeps that list. Closing a widget on its own forgets it.
+- **Shared state:** the Chrono-Siphon timer lives in the Rust backend, so the main app and a widget always show the same timer, and only one window tolls when it ends. The open Data Stylus scroll is shared through app events (`scroll-changed`), and the dashboard refreshes on `log-changed`.
+- **Phones:** narrow windows (under 640px) get a bottom tab bar instead of the sidebar, ready for a future mobile build. Pop-outs are desktop only.
 
 ## Setup (Windows)
 
@@ -59,7 +66,7 @@ On first run the app looks in Obsidian's own vault list (`%APPDATA%\obsidian\obs
 | Command | What it does |
 |---|---|
 | `npm run tauri dev` | Runs the desktop app with hot reload. The first run compiles the Rust crates, which takes a few minutes. |
-| `npm run dev` | Runs only the frontend in a browser at http://localhost:1420. Add `?widget=chrono-siphon` to switch widget. Logs go to the browser console instead of the vault. |
+| `npm run dev` | Runs only the frontend in a browser at http://localhost:1420. It shows the main app with sample dashboard numbers; add `?widget=data-stylus` or `?widget=chrono-siphon` to preview a widget window. Logs go to the browser console instead of the vault. |
 | `npm run tauri build` | Builds the release app (`src-tauri/target/release/cogitorium.exe`) and installers (`src-tauri/target/release/bundle/msi/` and `bundle/nsis/`). |
 | `cd src-tauri && cargo test` | Runs the Rust unit tests. |
 
@@ -77,7 +84,7 @@ Everything goes under `<vault>/Sources/Journal/Widgets/`. Set `DARK_CELLS_LOG_DI
 
 ## Cogitator stats
 
-`scripts/cogitator_stats.py` (Python standard library only) counts what the widgets logged for a date range:
+The dashboard's numbers come from the backend's `cogitator_stats` command (`src-tauri/src/lib.rs`). The same rules are available as a script for the `/cogitator` skill and for command-line use. `scripts/cogitator_stats.py` (Python standard library only) counts what the widgets logged for a date range:
 - focus minutes by day, task and hour, and streaks
 - subtask completions
 - every scroll's progress and idle days, with scrolls idle 7+ days marked as stalled
@@ -93,19 +100,27 @@ python scripts/cogitator_stats.py --from 2026-11-01 --to 2026-11-30 --vault "D:/
 ## Layout
 
 ```
-src/                     React frontend (runs in the system webview)
-  main.tsx               picks the widget from the window label
-  widgets/               DataStylus.tsx, ChronoSiphon.tsx
-  components/TitleBar    drag region, pin, minimise, close
-  lib/vaultLog.ts        calls the Rust append_log command
-  lib/scroll.ts          task breakdown, Markdown checklist in and out
-  lib/scrollStore.ts     read/write/list scroll notes (Rust commands)
-  components/Sigils.tsx  shared SVG skulls, cog, bronze and brass gradients
-  styles.css             Dark Cells palette
-src-tauri/               Rust backend
-  src/lib.rs             append_log and scroll commands (file I/O, path checks)
-  tauri.conf.json        app config and the two windows
-  capabilities/          which window APIs the frontend may call
+src/                       React frontend (runs in the system webview)
+  main.tsx                 picks the view from the window label (main app or a widget)
+  app/AppShell.tsx         main window: sidebar / bottom tabs, pages, pop-out button
+  app/Dashboard.tsx        the Cogitator home screen
+  widgets/                 DataStylus.tsx, ChronoSiphon.tsx (panels used in both the app and widgets)
+  components/WidgetFrame   frame and title bar for popped-out widget windows
+  components/TitleBar      drag region, vault, pin, minimise, close
+  lib/timer.ts             the shared Chrono-Siphon timer (backend commands + events)
+  lib/stats.ts             dashboard numbers (backend command; sample data in the browser)
+  lib/events.ts            events between windows
+  lib/widgets.ts           pop-out helpers
+  lib/vaultLog.ts          calls the Rust append_log command
+  lib/scroll.ts            task breakdown, Markdown checklist in and out
+  lib/scrollStore.ts       read/write/list scroll notes (Rust commands)
+  components/Sigils.tsx    shared SVG skulls, cog, bronze and brass gradients
+  styles.css               design tokens, app shell, dashboard, widgets
+src-tauri/                 Rust backend
+  src/lib.rs               vault and settings, logs and scrolls, shared timer,
+                           pop-out windows, Cogitator stats; unit tests
+  tauri.conf.json          app config and the main window
+  capabilities/            which window APIs the frontend may call
 ```
 
 ## Licence

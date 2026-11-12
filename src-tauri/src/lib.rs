@@ -13,6 +13,7 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -22,24 +23,43 @@ use tauri::{AppHandle, Emitter, Manager, State};
 const DEFAULT_LOG_DIR: &str = "Sources/Journal/Widgets";
 
 /// What is saved in `settings.json`.
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Clone, Serialize, Deserialize)]
 struct Settings {
     vault: Option<PathBuf>,
+    /// Widgets popped out of the main window; reopened on the next launch.
+    #[serde(default)]
+    open_widgets: Vec<String>,
 }
 
-/// Shared app state: where settings live and the current vault.
+/// Shared app state.
 struct AppState {
     settings_file: PathBuf,
-    vault: Mutex<Option<PathBuf>>,
+    settings: Mutex<Settings>,
+    /// The Chrono-Siphon timer. It lives here rather than in a window, so the
+    /// main app and a popped-out widget always show the same timer.
+    timer: Mutex<Timer>,
+    /// Set while the app shuts down, so closing its windows doesn't forget
+    /// which widgets were popped out.
+    quitting: AtomicBool,
+}
+
+fn load_settings(settings_file: &Path) -> Settings {
+    fs::read_to_string(settings_file)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Settings>(&text).ok())
+        .unwrap_or_default()
 }
 
 /// The saved vault, if the settings file names a folder that still exists.
 fn saved_vault(settings_file: &Path) -> Option<PathBuf> {
-    fs::read_to_string(settings_file)
-        .ok()
-        .and_then(|text| serde_json::from_str::<Settings>(&text).ok())
-        .and_then(|s| s.vault)
-        .filter(|p| p.is_dir())
+    load_settings(settings_file).vault.filter(|p| p.is_dir())
+}
+
+/// Saves `vault` into the settings file, keeping everything else in it.
+fn save_vault(settings_file: &Path, vault: &Path) -> Result<(), String> {
+    let mut settings = load_settings(settings_file);
+    settings.vault = Some(vault.to_path_buf());
+    save_settings(settings_file, &settings)
 }
 
 /// Picks a vault from Obsidian's own vault list (`obsidian.json`, in Obsidian's
@@ -79,7 +99,7 @@ fn initial_vault(settings_file: &Path, legacy_settings: Option<&Path>, obsidian_
         return Some(saved);
     }
     if let Some(old) = legacy_settings.and_then(saved_vault) {
-        let _ = save_settings(settings_file, &Settings { vault: Some(old.clone()) });
+        let _ = save_vault(settings_file, &old);
         return Some(old);
     }
     if let Some(env) = std::env::var_os("DARK_CELLS_VAULT").map(PathBuf::from).filter(|p| p.is_dir()) {
@@ -88,7 +108,7 @@ fn initial_vault(settings_file: &Path, legacy_settings: Option<&Path>, obsidian_
     let detected = obsidian_list
         .and_then(|f| fs::read_to_string(f).ok())
         .and_then(|text| vault_from_obsidian_list(&text))?;
-    let _ = save_settings(settings_file, &Settings { vault: Some(detected.clone()) });
+    let _ = save_vault(settings_file, &detected);
     Some(detected)
 }
 
@@ -100,9 +120,13 @@ fn save_settings(settings_file: &Path, settings: &Settings) -> Result<(), String
     fs::write(settings_file, json).map_err(|e| e.to_string())
 }
 
+fn settings_lock(state: &AppState) -> Result<std::sync::MutexGuard<'_, Settings>, String> {
+    state.settings.lock().map_err(|_| "Settings are unavailable".to_string())
+}
+
 /// The current vault, or an error telling the UI to ask for one.
 fn vault_root(state: &AppState) -> Result<PathBuf, String> {
-    let vault = state.vault.lock().map_err(|_| "Vault setting is unavailable".to_string())?.clone();
+    let vault = settings_lock(state)?.vault.clone();
     match vault {
         Some(p) if p.is_dir() => Ok(p),
         Some(p) => Err(format!("Vault folder not found: {}", p.display())),
@@ -123,8 +147,11 @@ fn set_vault(app: AppHandle, state: State<AppState>, path: String) -> Result<Str
     if !path.is_dir() {
         return Err(format!("Not a folder: {}", path.display()));
     }
-    save_settings(&state.settings_file, &Settings { vault: Some(path.clone()) })?;
-    *state.vault.lock().map_err(|_| "Vault setting is unavailable".to_string())? = Some(path.clone());
+    {
+        let mut settings = settings_lock(&state)?;
+        settings.vault = Some(path.clone());
+        save_settings(&state.settings_file, &settings)?;
+    }
     let shown = path.display().to_string();
     let _ = app.emit("vault-changed", &shown);
     Ok(shown)
@@ -172,9 +199,12 @@ fn append_log_in(vault: &Path, date: &str, entry: &str) -> Result<String, String
     Ok(file.display().to_string())
 }
 
+/// Appends a log line and tells every window (the dashboard refreshes on it).
 #[tauri::command]
-fn append_log(state: State<AppState>, date: String, entry: String) -> Result<String, String> {
-    append_log_in(&vault_root(&state)?, &date, &entry)
+fn append_log(app: AppHandle, state: State<AppState>, date: String, entry: String) -> Result<String, String> {
+    let path = append_log_in(&vault_root(&state)?, &date, &entry)?;
+    let _ = app.emit("log-changed", &date);
+    Ok(path)
 }
 
 /// Data Stylus scrolls live in `<log dir>/Scrolls/`, one Markdown checklist per task.
@@ -247,6 +277,463 @@ fn list_scrolls(state: State<AppState>) -> Result<Vec<String>, String> {
     list_scrolls_in(&vault_root(&state)?)
 }
 
+// =====================================================================
+// Shared Chrono-Siphon timer
+// =====================================================================
+
+/// The timer every window displays. Times are Unix milliseconds.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Timer {
+    /// idle | running | paused | finished
+    phase: &'static str,
+    task: String,
+    minutes: u32,
+    /// When a running timer ends.
+    end_at: Option<u64>,
+    /// Time left while paused.
+    remaining_ms: Option<u64>,
+}
+
+impl Default for Timer {
+    fn default() -> Self {
+        Timer { phase: "idle", task: String::new(), minutes: 25, end_at: None, remaining_ms: None }
+    }
+}
+
+impl Timer {
+    fn start(&mut self, task: String, minutes: u32, now: u64) {
+        let minutes = minutes.clamp(1, 180);
+        *self = Timer { phase: "running", task, minutes, end_at: Some(now + u64::from(minutes) * 60_000), remaining_ms: None };
+    }
+    fn pause(&mut self, now: u64) {
+        if let ("running", Some(end)) = (self.phase, self.end_at) {
+            self.phase = "paused";
+            self.remaining_ms = Some(end.saturating_sub(now));
+            self.end_at = None;
+        }
+    }
+    fn resume(&mut self, now: u64) {
+        if let ("paused", Some(left)) = (self.phase, self.remaining_ms) {
+            self.phase = "running";
+            self.end_at = Some(now + left);
+            self.remaining_ms = None;
+        }
+    }
+    fn reset(&mut self) {
+        self.phase = "idle";
+        self.end_at = None;
+        self.remaining_ms = None;
+    }
+    /// Marks a running timer finished once its time is up. Returns true only
+    /// for the call that actually finishes it, so only one window tolls.
+    fn finish(&mut self, now: u64) -> bool {
+        match (self.phase, self.end_at) {
+            ("running", Some(end)) if now + 1_000 >= end => {
+                self.phase = "finished";
+                self.end_at = None;
+                self.remaining_ms = Some(0);
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Applies `change` to the shared timer and tells every window.
+fn update_timer(app: &AppHandle, state: &AppState, change: impl FnOnce(&mut Timer) -> bool) -> Result<(Timer, bool), String> {
+    let (snapshot, result) = {
+        let mut timer = state.timer.lock().map_err(|_| "Timer is unavailable".to_string())?;
+        let result = change(&mut timer);
+        (timer.clone(), result)
+    };
+    let _ = app.emit("timer-changed", &snapshot);
+    Ok((snapshot, result))
+}
+
+#[tauri::command]
+fn timer_get(state: State<AppState>) -> Result<Timer, String> {
+    Ok(state.timer.lock().map_err(|_| "Timer is unavailable".to_string())?.clone())
+}
+
+#[tauri::command]
+fn timer_start(app: AppHandle, state: State<AppState>, task: String, minutes: u32) -> Result<Timer, String> {
+    Ok(update_timer(&app, &state, |t| {
+        t.start(task, minutes, now_ms());
+        true
+    })?
+    .0)
+}
+
+#[tauri::command]
+fn timer_pause(app: AppHandle, state: State<AppState>) -> Result<Timer, String> {
+    Ok(update_timer(&app, &state, |t| {
+        t.pause(now_ms());
+        true
+    })?
+    .0)
+}
+
+#[tauri::command]
+fn timer_resume(app: AppHandle, state: State<AppState>) -> Result<Timer, String> {
+    Ok(update_timer(&app, &state, |t| {
+        t.resume(now_ms());
+        true
+    })?
+    .0)
+}
+
+#[tauri::command]
+fn timer_reset(app: AppHandle, state: State<AppState>) -> Result<Timer, String> {
+    Ok(update_timer(&app, &state, |t| {
+        t.reset();
+        true
+    })?
+    .0)
+}
+
+/// Returns true if this call finished the timer (the caller plays the toll).
+#[tauri::command]
+fn timer_finish(app: AppHandle, state: State<AppState>) -> Result<bool, String> {
+    Ok(update_timer(&app, &state, |t| t.finish(now_ms()))?.1)
+}
+
+// =====================================================================
+// Pop-out widgets (desktop only)
+// =====================================================================
+
+/// The widgets that can be popped out of the main window: label, title, size, resizable.
+const WIDGETS: [(&str, &str, f64, f64, bool); 2] = [
+    ("data-stylus", "Data Stylus", 380.0, 620.0, true),
+    ("chrono-siphon", "Chrono-Siphon", 300.0, 600.0, false),
+];
+
+fn is_widget(label: &str) -> bool {
+    WIDGETS.iter().any(|w| w.0 == label)
+}
+
+/// Opens a widget window, or focuses it if it's already open.
+#[cfg(desktop)]
+fn create_widget(app: &AppHandle, label: &str) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window(label) {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+        return Ok(());
+    }
+    let (_, title, width, height, resizable) = WIDGETS
+        .iter()
+        .find(|w| w.0 == label)
+        .copied()
+        .ok_or_else(|| format!("Unknown widget: {label}"))?;
+    tauri::WebviewWindowBuilder::new(app, label, tauri::WebviewUrl::App("index.html".into()))
+        .title(title)
+        .inner_size(width, height)
+        .resizable(resizable)
+        .decorations(false)
+        .build()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+fn set_widget_open(app: &AppHandle, state: &AppState, label: &str, open: bool) -> Result<(), String> {
+    let list = {
+        let mut settings = settings_lock(state)?;
+        settings.open_widgets.retain(|l| l != label);
+        if open {
+            settings.open_widgets.push(label.to_string());
+        }
+        save_settings(&state.settings_file, &settings)?;
+        settings.open_widgets.clone()
+    };
+    let _ = app.emit("widgets-changed", &list);
+    Ok(())
+}
+
+/// Pops a section out of the main window as its own widget, and remembers it.
+///
+/// Must be `async`: a plain (sync) command runs on the main thread, and on
+/// Windows building a webview window there deadlocks (the new window waits for
+/// the main thread, which is waiting for the command). That froze the app with
+/// a blank widget in v0.5.0. Async commands run on a worker thread instead.
+#[tauri::command]
+async fn open_widget(app: AppHandle, state: State<'_, AppState>, label: String) -> Result<(), String> {
+    if !is_widget(&label) {
+        return Err(format!("Unknown widget: {label}"));
+    }
+    #[cfg(desktop)]
+    {
+        create_widget(&app, &label)?;
+        set_widget_open(&app, &state, &label, true)
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (&app, &state);
+        Err("Widgets are only available on desktop".into())
+    }
+}
+
+/// Which widgets are popped out right now.
+#[tauri::command]
+fn open_widgets(state: State<AppState>) -> Result<Vec<String>, String> {
+    Ok(settings_lock(&state)?.open_widgets.clone())
+}
+
+/// True on Windows, macOS and Linux; false on phones, where there are no pop-outs.
+#[tauri::command]
+fn is_desktop() -> bool {
+    cfg!(desktop)
+}
+
+// =====================================================================
+// Cogitator stats (the dashboard). Same rules as scripts/cogitator_stats.py.
+// =====================================================================
+
+/// Log names for the timer and the task widget, current first; older logs use the earlier names.
+const TIMER_NAMES: [&str; 3] = ["Chrono-Siphon", "Chronoglass", "Tempormortis"];
+const STYLUS_NAMES: [&str; 2] = ["Data Stylus", "Auto Quill"];
+const STALLED_AFTER_DAYS: i64 = 7;
+
+#[derive(Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DayStat {
+    date: String,
+    minutes: u32,
+    sessions: u32,
+    subtasks_done: u32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TaskStat {
+    task: String,
+    minutes: u32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScrollStat {
+    title: String,
+    file: String,
+    done: u32,
+    total: u32,
+    idle_days: Option<i64>,
+    /// complete | stalled | active
+    status: &'static str,
+    next_item: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Stats {
+    today: DayStat,
+    /// Consecutive days with focus, ending today (or yesterday, if today has none yet).
+    streak: u32,
+    /// Oldest first, ending today.
+    days: Vec<DayStat>,
+    by_task: Vec<TaskStat>,
+    scrolls: Vec<ScrollStat>,
+}
+
+/// Days since 1970-01-01 for a civil date (Howard Hinnant's algorithm).
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+fn civil_from_days(z: i64) -> (i64, i64, i64) {
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    (if m <= 2 { yoe + era * 400 + 1 } else { yoe + era * 400 }, m, d)
+}
+
+fn parse_day(date: &str) -> Option<i64> {
+    if !is_iso_date(date) {
+        return None;
+    }
+    let n = |r: std::ops::Range<usize>| date[r].parse::<i64>().ok();
+    Some(days_from_civil(n(0..4)?, n(5..7)?, n(8..10)?))
+}
+
+fn format_day(day: i64) -> String {
+    let (y, m, d) = civil_from_days(day);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+#[derive(Default)]
+struct DayTotals {
+    minutes: u32,
+    sessions: u32,
+    subtasks_done: u32,
+}
+
+/// Reads every daily log: totals per day, and focus minutes per (day, task).
+fn read_day_totals(folder: &Path) -> (std::collections::HashMap<i64, DayTotals>, Vec<(i64, String, u32)>) {
+    let mut days = std::collections::HashMap::<i64, DayTotals>::new();
+    let mut sessions = Vec::new();
+    let Ok(entries) = fs::read_dir(folder) else {
+        return (days, sessions);
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some(day) = name.strip_suffix(".md").and_then(parse_day) else {
+            continue;
+        };
+        let Ok(text) = fs::read_to_string(entry.path()) else {
+            continue;
+        };
+        for line in text.lines() {
+            let Some(rest) = line.trim().strip_prefix("- ") else {
+                continue;
+            };
+            let fields: Vec<&str> = rest.split(" · ").map(str::trim).collect();
+            if fields.len() < 3 {
+                continue;
+            }
+            let widget = fields[1];
+            if TIMER_NAMES.contains(&widget) {
+                let Some(minutes) = fields[2].split_whitespace().next().and_then(|m| m.parse::<u32>().ok()) else {
+                    continue;
+                };
+                let totals = days.entry(day).or_default();
+                totals.minutes += minutes;
+                totals.sessions += 1;
+                let task = fields.get(3).copied().unwrap_or("untitled").to_string();
+                sessions.push((day, task, minutes));
+            } else if STYLUS_NAMES.contains(&widget) && fields[2] == "completed" {
+                days.entry(day).or_default().subtasks_done += 1;
+            }
+        }
+    }
+    (days, sessions)
+}
+
+fn read_scroll_stats(folder: &Path, today: i64) -> Vec<ScrollStat> {
+    let Ok(entries) = fs::read_dir(folder.join("Scrolls")) else {
+        return Vec::new();
+    };
+    let mut out: Vec<ScrollStat> = entries
+        .filter_map(Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".md"))
+        .filter_map(|e| {
+            let file = e.file_name().to_string_lossy().into_owned();
+            let text = fs::read_to_string(e.path()).ok()?;
+            let title = text
+                .lines()
+                .find_map(|l| l.strip_prefix("# "))
+                .map(|t| t.trim().to_string())
+                .unwrap_or_else(|| file.trim_end_matches(".md").to_string());
+            let mut done = 0;
+            let mut total = 0;
+            let mut next_item = None;
+            for line in text.lines() {
+                let l = line.trim_start();
+                for (prefix, ticked) in [("- [x] ", true), ("- [X] ", true), ("- [ ] ", false)] {
+                    if let Some(item) = l.strip_prefix(prefix) {
+                        total += 1;
+                        if ticked {
+                            done += 1;
+                        } else if next_item.is_none() {
+                            next_item = Some(item.trim().to_string());
+                        }
+                    }
+                }
+            }
+            let idle_days = text
+                .lines()
+                .find_map(|l| l.strip_prefix("updated:"))
+                .and_then(|v| parse_day(v.trim().get(0..10)?))
+                .map(|d| today - d);
+            let status = if total > 0 && done == total {
+                "complete"
+            } else if idle_days.is_some_and(|d| d >= STALLED_AFTER_DAYS) {
+                "stalled"
+            } else {
+                "active"
+            };
+            Some(ScrollStat { title, file, done, total, idle_days, status, next_item })
+        })
+        .collect();
+    // stalled first, then active, then complete; most recently touched first within each
+    let rank = |s: &ScrollStat| match s.status {
+        "stalled" => 0,
+        "active" => 1,
+        _ => 2,
+    };
+    out.sort_by(|a, b| rank(a).cmp(&rank(b)).then(a.idle_days.cmp(&b.idle_days)));
+    out
+}
+
+/// Builds the dashboard numbers for the `days` days ending `today` (YYYY-MM-DD, the user's local date).
+fn compute_stats(vault: &Path, today: &str, days: u32) -> Result<Stats, String> {
+    let today_n = parse_day(today).ok_or_else(|| format!("Bad date: {today}"))?;
+    let days = days.clamp(1, 366) as i64;
+    let folder = log_dir(vault)?;
+    let (totals, sessions) = read_day_totals(&folder);
+
+    let day_stat = |d: i64| {
+        let t = totals.get(&d);
+        DayStat {
+            date: format_day(d),
+            minutes: t.map_or(0, |t| t.minutes),
+            sessions: t.map_or(0, |t| t.sessions),
+            subtasks_done: t.map_or(0, |t| t.subtasks_done),
+        }
+    };
+    let focused = |d: i64| totals.get(&d).is_some_and(|t| t.minutes > 0);
+
+    // A streak isn't broken just because today hasn't had a session yet.
+    let mut cursor = if focused(today_n) { today_n } else { today_n - 1 };
+    let mut streak = 0;
+    while focused(cursor) {
+        streak += 1;
+        cursor -= 1;
+    }
+
+    let start = today_n - days + 1;
+    let mut by_task = std::collections::HashMap::<String, u32>::new();
+    for (day, task, minutes) in &sessions {
+        if (start..=today_n).contains(day) {
+            *by_task.entry(task.clone()).or_default() += minutes;
+        }
+    }
+    let mut by_task: Vec<TaskStat> = by_task.into_iter().map(|(task, minutes)| TaskStat { task, minutes }).collect();
+    by_task.sort_by(|a, b| b.minutes.cmp(&a.minutes).then(a.task.cmp(&b.task)));
+    by_task.truncate(6);
+
+    Ok(Stats {
+        today: day_stat(today_n),
+        streak,
+        days: (start..=today_n).map(day_stat).collect(),
+        by_task,
+        scrolls: read_scroll_stats(&folder, today_n),
+    })
+}
+
+#[tauri::command]
+fn cogitator_stats(state: State<AppState>, today: String, days: u32) -> Result<Stats, String> {
+    compute_stats(&vault_root(&state)?, &today, days)
+}
+
+// =====================================================================
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // In dev, load `.env` from the repo root (dotenvy searches parent folders).
@@ -261,8 +748,40 @@ pub fn run() {
             let obsidian_list = app.path().config_dir().ok().map(|d| d.join("obsidian").join("obsidian.json"));
             let legacy_settings = app.path().config_dir().ok().map(|d| d.join(LEGACY_APP_ID).join("settings.json"));
             let vault = initial_vault(&settings_file, legacy_settings.as_deref(), obsidian_list.as_deref());
-            app.manage(AppState { settings_file, vault: Mutex::new(vault) });
+            let mut settings = load_settings(&settings_file);
+            settings.vault = vault;
+            settings.open_widgets.retain(|l| is_widget(l));
+            let reopen = settings.open_widgets.clone();
+            app.manage(AppState {
+                settings_file,
+                settings: Mutex::new(settings),
+                timer: Mutex::new(Timer::default()),
+                quitting: AtomicBool::new(false),
+            });
+            // Reopen the widgets that were popped out last time.
+            #[cfg(desktop)]
+            for label in reopen {
+                let _ = create_widget(app.handle(), &label);
+            }
+            #[cfg(not(desktop))]
+            let _ = reopen;
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            let app = window.app_handle();
+            let state = app.state::<AppState>();
+            match event {
+                // Closing the main window quits the whole app; the pop-out list is kept for next time.
+                tauri::WindowEvent::CloseRequested { .. } if window.label() == "main" => {
+                    state.quitting.store(true, Ordering::SeqCst);
+                    app.exit(0);
+                }
+                // Closing a widget on its own forgets it.
+                tauri::WindowEvent::Destroyed if is_widget(window.label()) && !state.quitting.load(Ordering::SeqCst) => {
+                    let _ = set_widget_open(app, &state, window.label(), false);
+                }
+                _ => {}
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_vault,
@@ -270,7 +789,17 @@ pub fn run() {
             append_log,
             write_scroll,
             read_scroll,
-            list_scrolls
+            list_scrolls,
+            timer_get,
+            timer_start,
+            timer_pause,
+            timer_resume,
+            timer_reset,
+            timer_finish,
+            open_widget,
+            open_widgets,
+            is_desktop,
+            cogitator_stats
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -337,11 +866,11 @@ mod tests {
         let settings_file = dir.join("nested").join("settings.json");
 
         // A saved folder that no longer exists is ignored.
-        save_settings(&settings_file, &Settings { vault: Some(dir.join("gone")) }).unwrap();
+        save_settings(&settings_file, &Settings { vault: Some(dir.join("gone")), ..Default::default() }).unwrap();
         assert_eq!(saved_vault(&settings_file), None);
 
         // A saved, existing folder is read back on the next start.
-        save_settings(&settings_file, &Settings { vault: Some(vault.clone()) }).unwrap();
+        save_settings(&settings_file, &Settings { vault: Some(vault.clone()), ..Default::default() }).unwrap();
         assert_eq!(saved_vault(&settings_file), Some(vault.clone()));
 
         fs::remove_dir_all(&dir).unwrap();
@@ -391,11 +920,94 @@ mod tests {
         // A vault saved under the old app ID wins over detection and is copied across.
         let new_settings = a.join("new").join("settings.json");
         let old_settings = a.join("old").join("settings.json");
-        save_settings(&old_settings, &Settings { vault: Some(a.clone()) }).unwrap();
+        save_settings(&old_settings, &Settings { vault: Some(a.clone()), ..Default::default() }).unwrap();
         assert_eq!(initial_vault(&new_settings, Some(&old_settings), Some(&list)), Some(a.clone()));
         assert_eq!(saved_vault(&new_settings), Some(a.clone()));
 
         fs::remove_dir_all(&a).unwrap();
         fs::remove_dir_all(&b).unwrap();
+    }
+
+    #[test]
+    fn saving_the_vault_keeps_open_widgets() {
+        let dir = temp_dir("keep");
+        let file = dir.join("settings.json");
+        let settings = Settings { vault: None, open_widgets: vec!["chrono-siphon".into()] };
+        save_settings(&file, &settings).unwrap();
+        save_vault(&file, &dir).unwrap();
+        let back = load_settings(&file);
+        assert_eq!(back.vault, Some(dir.clone()));
+        assert_eq!(back.open_widgets, vec!["chrono-siphon".to_string()]);
+        // Older settings files without open_widgets still load.
+        fs::write(&file, r#"{"vault": null}"#).unwrap();
+        assert!(load_settings(&file).open_widgets.is_empty());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn timer_pauses_and_resumes_where_it_left_off() {
+        let mut t = Timer::default();
+        t.start("quarry".into(), 25, 1_000);
+        assert_eq!((t.phase, t.end_at), ("running", Some(1_000 + 25 * 60_000)));
+        t.pause(61_000); // a minute in
+        assert_eq!((t.phase, t.remaining_ms), ("paused", Some(24 * 60_000)));
+        t.resume(500_000);
+        assert_eq!((t.phase, t.end_at), ("running", Some(500_000 + 24 * 60_000)));
+        // Too early to finish; then only the first finish call wins.
+        assert!(!t.finish(600_000));
+        let end = t.end_at.unwrap();
+        assert!(t.finish(end));
+        assert!(!t.finish(end + 5));
+        assert_eq!(t.phase, "finished");
+        t.reset();
+        assert_eq!((t.phase, t.task.as_str(), t.minutes), ("idle", "quarry", 25));
+        // Minutes are clamped.
+        t.start(String::new(), 999, 0);
+        assert_eq!(t.minutes, 180);
+    }
+
+    #[test]
+    fn dates_round_trip() {
+        for d in ["1970-01-01", "2000-02-29", "2026-11-12", "2026-12-31", "2027-01-01"] {
+            assert_eq!(format_day(parse_day(d).unwrap()), d);
+        }
+        assert_eq!(parse_day("2027-01-01").unwrap() - parse_day("2026-12-31").unwrap(), 1);
+        assert_eq!(parse_day("nope"), None);
+    }
+
+    #[test]
+    fn stats_count_focus_streaks_and_stalls() {
+        let vault = temp_dir("stats");
+        let w = vault.join(DEFAULT_LOG_DIR);
+        fs::create_dir_all(w.join("Scrolls")).unwrap();
+        let log = |day: &str, lines: &[&str]| fs::write(w.join(format!("{day}.md")), format!("---\ntype: widget-log\n---\n# {day}\n\n{}\n", lines.join("\n"))).unwrap();
+        log("2026-11-09", &["- 09:10 · Tempormortis · 45 min · UE5 C++ refresh"]);
+        log("2026-11-10", &["- 09:30 · Chronoglass · 25 min · UE5 HUD", "- 10:00 · Auto Quill · completed · a · UE5 HUD"]);
+        log("2026-11-11", &["- 08:45 · Chrono-Siphon · 60 min · UE5 HUD", "- 19:00 · Data Stylus · completed · b · Reset", "- 19:01 · Data Stylus · reopened · b · Reset", "junk"]);
+        log("2026-11-12", &["- 09:15 · Chrono-Siphon · 25 min · UE5 HUD", "- 09:50 · Chrono-Siphon · 20 min · Job apps"]);
+        log("2026-10-01", &["- 09:00 · Chrono-Siphon · 25 min · old"]);
+        fs::write(w.join("Scrolls/HUD.md"), "---\nupdated: 2026-11-02 10:00\n---\n# UE5 HUD\n\n- [x] a\n- [ ] build the bar\n  - [ ] bind it\n").unwrap();
+        fs::write(w.join("Scrolls/Reset.md"), "---\nupdated: 2026-11-12 16:00\n---\n# Reset\n\n- [x] a\n- [x] b\n").unwrap();
+
+        let s = compute_stats(&vault, "2026-11-12", 7).unwrap();
+        assert_eq!((s.today.minutes, s.today.sessions), (45, 2));
+        assert_eq!(s.streak, 4);
+        assert_eq!(s.days.len(), 7);
+        assert_eq!(s.days.first().unwrap().date, "2026-11-06");
+        assert_eq!(s.days.iter().map(|d| d.minutes).sum::<u32>(), 175, "old log is outside the week");
+        assert_eq!(s.days.iter().map(|d| d.subtasks_done).sum::<u32>(), 2);
+        assert_eq!((s.by_task[0].task.as_str(), s.by_task[0].minutes), ("UE5 HUD", 110));
+        let hud = s.scrolls.iter().find(|x| x.title == "UE5 HUD").unwrap();
+        assert_eq!((hud.done, hud.total, hud.status, hud.idle_days), (1, 3, "stalled", Some(10)));
+        assert_eq!(hud.next_item.as_deref(), Some("build the bar"));
+        assert_eq!(s.scrolls[0].status, "stalled", "stalled scrolls come first");
+        assert_eq!(s.scrolls.iter().find(|x| x.title == "Reset").unwrap().status, "complete");
+
+        // No session yet today: yesterday's streak still counts.
+        let s = compute_stats(&vault, "2026-11-13", 7).unwrap();
+        assert_eq!((s.today.minutes, s.streak), (0, 4));
+        // A missed day breaks it.
+        assert_eq!(compute_stats(&vault, "2026-11-14", 7).unwrap().streak, 0);
+        fs::remove_dir_all(&vault).unwrap();
     }
 }

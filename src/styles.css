@@ -937,6 +937,334 @@ button {
   box-shadow: none;
 }
 
+/* ============================================== main app shell */
+/* One window, three sections. Sidebar on desktop; a bottom tab bar on narrow
+   windows and phones (see the media query at the end of this section). */
+.shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.nav {
+  width: 92px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 8px;
+  background: linear-gradient(var(--iron-800), var(--iron-900));
+  border-right: 1px solid #000;
+  box-shadow: inset -1px 0 0 var(--iron-500);
+}
+.nav-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 4px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--bone-dim);
+  cursor: pointer;
+}
+.nav-item:hover {
+  color: var(--bone);
+  background: var(--iron-600);
+}
+.nav-item.on {
+  color: var(--cog);
+  background: var(--cog-bg);
+  box-shadow: inset 0 0 0 1px var(--cog-dim);
+}
+.nav-label {
+  font-family: var(--font-label);
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+.nav-dot {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--bronze-300);
+}
+.page {
+  flex: 1;
+  min-width: 0;
+  min-height: 0; /* lets .page-body scroll instead of pushing the bottom tab bar off-screen */
+  display: flex;
+  flex-direction: column;
+}
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 18px 8px;
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 var(--iron-600);
+  flex-shrink: 0;
+}
+.page-title {
+  margin: 0;
+  font-family: var(--font-label);
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: 0.04em;
+  color: var(--bronze-100);
+}
+.page-hint {
+  margin: 0;
+  font-size: 14px;
+  font-style: italic;
+  color: var(--bone-dim);
+}
+button.pop-out {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+.page-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+}
+.column {
+  width: 100%;
+  max-width: 440px;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ============================================== Cogitator dashboard */
+.dash {
+  width: 100%;
+  max-width: 1000px;
+  padding: 14px 16px 28px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  align-content: start;
+  gap: 12px;
+}
+.dash-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  font-size: 19px;
+  line-height: 1.15;
+}
+.dash-card .term-label {
+  margin: 0;
+}
+.kpis {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  justify-content: space-around;
+  gap: 12px;
+}
+.kpi {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.kpi-value {
+  font-size: 44px;
+  line-height: 1;
+}
+.kpi-sub,
+.dash-empty,
+.week-day,
+.task-time,
+.scroll-meta,
+.scroll-next {
+  color: var(--cog-dim);
+  text-shadow: none;
+}
+.kpi-sub {
+  font-size: 16px;
+}
+.week {
+  display: flex;
+  gap: 6px;
+  height: 120px;
+}
+.week-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.week-bar-wrap {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  border-bottom: 1px solid var(--cog-line);
+}
+.week-bar {
+  width: 100%;
+  background: var(--cog);
+  box-shadow: 0 0 6px var(--cog-glow);
+}
+.week-bar.today {
+  background: var(--cog-dim);
+  outline: 1px dashed var(--cog);
+}
+.week-day {
+  font-size: 15px;
+  text-align: center;
+}
+.week-day.today {
+  color: var(--cog);
+}
+.task-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.task-bars li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+}
+.task-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.task-bar {
+  grid-column: 1 / -1;
+  height: 6px;
+  background: var(--cog-line);
+}
+.task-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--cog);
+}
+.dash-timer {
+  margin: 0;
+  font-size: 46px;
+  line-height: 1;
+}
+.dash-timer.phase-finished {
+  color: var(--alarm);
+}
+.dash-timer.phase-paused {
+  color: #eafaff;
+}
+.dash-line {
+  margin: 0;
+  font-size: 18px;
+}
+.dash-line.strong {
+  font-size: 22px;
+}
+.dash-empty {
+  margin: 0;
+  font-size: 17px;
+}
+.dash-link {
+  align-self: flex-start;
+  margin-top: auto;
+  padding: 2px 10px;
+  font-family: var(--font-readout);
+  font-size: 17px;
+  text-transform: uppercase;
+  color: var(--cog);
+  background: none;
+  border: 1px solid var(--cog-line);
+  cursor: pointer;
+}
+.dash-link:hover {
+  background: rgba(159, 220, 110, 0.1);
+  border-color: var(--cog-dim);
+}
+.scroll-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.scroll-list li {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 8px;
+}
+.scroll-meta,
+.scroll-next {
+  font-size: 16px;
+}
+.scroll-next {
+  width: 100%;
+}
+.scroll-stalled .scroll-title,
+.scroll-stalled .scroll-meta,
+.alarm {
+  color: var(--alarm);
+  text-shadow: 0 0 6px rgba(229, 72, 60, 0.35);
+}
+.scroll-complete .scroll-title {
+  color: var(--cog-dim);
+  text-shadow: none;
+}
+.dash-error {
+  padding: 24px;
+}
+
+@media (max-width: 640px) {
+  .shell {
+    flex-direction: column;
+  }
+  .nav {
+    order: 2;
+    width: auto;
+    flex-direction: row;
+    gap: 4px;
+    padding: 6px 8px 10px;
+    border-right: 0;
+    border-top: 1px solid #000;
+    box-shadow: inset 0 1px 0 var(--iron-500);
+  }
+  .nav-item {
+    flex: 1;
+    padding: 6px 2px;
+  }
+  .page-head {
+    padding: 10px 12px 6px;
+  }
+  .page-title {
+    font-size: 18px;
+  }
+  .dash {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 10px;
+  }
+  .kpi-value {
+    font-size: 32px;
+  }
+}
+
 /* ============================================== first-run vault screen */
 .gate {
   justify-content: center;

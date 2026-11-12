@@ -35,9 +35,41 @@ export const MinimiseIcon = (p: IconProps) => (
   </Svg>
 );
 
+/** Maximise: one square. */
+export const MaximiseIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3.5" y="3.5" width="9" height="9" rx="1" />
+  </Svg>
+);
+
+/** Restore: two overlapping squares. */
+export const RestoreIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3" y="5.5" width="7.5" height="7.5" rx="1" />
+    <path d="M5.5 5.5V4a1 1 0 0 1 1-1H12a1 1 0 0 1 1 1v5.5a1 1 0 0 1-1 1h-1.5" />
+  </Svg>
+);
+
 export const CloseIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="m4.5 4.5 7 7M11.5 4.5l-7 7" />
+  </Svg>
+);
+
+/** Cogitator: a brain, flesh on the left and a circuit node on the right. */
+export const CogitatorIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M8 3.2C6.9 2.3 5 2.5 4.4 3.7 3 3.8 2.3 5 2.6 6.2 1.8 7 1.9 8.4 2.7 9.1 2.6 10.6 3.7 11.8 5 11.8 5.6 12.9 7 13.2 8 12.6" />
+    <path d="M8 3.2V12.6M8 5.5H11V4M8 8.5H12.5M8 11H10.5V12.5" />
+    <circle cx="11" cy="3.5" r=".6" />
+    <circle cx="13" cy="8.5" r=".6" />
+  </Svg>
+);
+
+/** Pop out: a window with an arrow leaving it. */
+export const PopOutIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M9.5 2.5h4v4M13.5 2.5 8 8M12 9.5v3a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3" />
   </Svg>
 );
 
