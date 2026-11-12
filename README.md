@@ -6,7 +6,7 @@ Warhammer 40k-themed desktop productivity widgets for tracking, managing and upd
 |---|---|
 | **Auto Quill** ✒ | Paste a task. Prose is broken into subtasks (on sentences, semicolons, "then" and "after that"); bullet or checkbox lists are kept as they are, nesting included. Sealing writes a Markdown checklist to the vault. Ticks update that note, and ticks made in Obsidian come back when you focus the widget. |
 | **Tempormortis** ⧗ | A Pomodoro timer drawn after the Judiciar's archeotech hourglass: bronze frame, skull finial, winged-skull cap, crux pendant. Name the quarry, set the minutes, invoke stasis, and record the verdict when the sands run out. |
-| **Cogitator** | Not code. Claude reads the logs in the vault to chart sessions and answer "what was I doing two weeks ago?" |
+| **Cogitator** | A `/cogitator` Claude skill in the vault. It runs `scripts/cogitator_stats.py` for the numbers, then answers questions ("what was I doing two weeks ago?") or writes a weekly review. |
 
 Inspired by the desktop widgets in Tina Huang's [Learn 10X Faster In 10 Minutes](https://www.youtube.com/watch?v=sbmP6i-MChk).
 
@@ -65,6 +65,21 @@ Everything goes under `<vault>/Sources/Journal/Widgets/`. Set `DARK_CELLS_LOG_DI
 ```markdown
 - 14:32 · Tempormortis · 25 min · film demo
 - 14:40 · Auto Quill · completed · Modern C++ chapter 1 · UE5 C++ refresh
+```
+
+## Cogitator stats
+
+`scripts/cogitator_stats.py` (Python standard library only) counts what the widgets logged for a date range:
+- focus minutes by day, task and hour, and streaks
+- subtask completions
+- every scroll's progress and idle days, with scrolls idle 7+ days marked as stalled
+
+It finds the vault from the app's saved settings.
+
+```
+python scripts/cogitator_stats.py            # last 7 days, Markdown
+python scripts/cogitator_stats.py --days 30 --json
+python scripts/cogitator_stats.py --from 2026-11-01 --to 2026-11-30 --vault "D:/path/to/vault"
 ```
 
 ## Layout
