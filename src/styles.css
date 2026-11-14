@@ -1074,6 +1074,7 @@ button.pop-out {
 .kpis {
   grid-column: 1 / -1;
   flex-direction: row;
+  flex-wrap: wrap;
   justify-content: space-around;
   gap: 12px;
 }
@@ -1230,6 +1231,98 @@ button.pop-out {
 }
 .dash-error {
   padding: 24px;
+}
+
+/* daily focus goal */
+.kpi-meter {
+  width: 140px;
+  margin: 4px 0 2px;
+}
+.kpi.goal-met .kpi-value {
+  color: #d9ffb8;
+  text-shadow: 0 0 10px var(--cog-glow), 0 0 2px var(--cog);
+}
+.kpi.goal-met .kpi-sub {
+  color: var(--cog);
+}
+.goal-toggle {
+  margin-top: 4px;
+  padding: 0 6px;
+  font-family: var(--font-readout);
+  font-size: 15px;
+  text-transform: uppercase;
+  color: var(--cog-dim);
+  background: none;
+  border: 0;
+  border-bottom: 1px dashed var(--cog-line);
+  cursor: pointer;
+}
+.goal-toggle:hover,
+.goal-toggle[aria-expanded="true"] {
+  color: var(--cog);
+}
+.goal-editor {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--cog-line);
+}
+.goal-editor .chips {
+  flex: 1;
+  min-width: 260px;
+  max-width: 520px;
+}
+.goal-editor .chip {
+  font-size: 18px;
+}
+.label-aside {
+  color: var(--cog-dim);
+}
+.week-bar-wrap {
+  position: relative;
+}
+.week-bar.under {
+  background: var(--cog-dim);
+  box-shadow: none;
+}
+.week-bar.met {
+  background: var(--cog);
+  box-shadow: 0 0 8px var(--cog-glow);
+}
+.goal-mark {
+  position: absolute;
+  left: -3px;
+  right: -3px;
+  border-top: 1px dashed var(--cog);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* project picker on the Chrono-Siphon */
+.select {
+  appearance: none;
+  padding-right: 28px;
+  cursor: pointer;
+  color-scheme: dark;
+  background-image: linear-gradient(45deg, transparent 50%, var(--bone-dim) 50%), linear-gradient(135deg, var(--bone-dim) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 14px, calc(100% - 10px) 14px;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+.select option {
+  color: var(--bone);
+  background: var(--iron-900);
+}
+.readout-project {
+  margin-top: 2px;
+  font-size: 16px;
+  color: var(--cog-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @media (max-width: 640px) {

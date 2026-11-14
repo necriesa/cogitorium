@@ -6,9 +6,9 @@ It is **one app** with three sections, and on the desktop any section can also b
 
 | Section | What it does |
 |---|---|
-| **Cogitator** (home) | Dashboard of your record, counted by the app from the vault logs: today's focus and sessions, streak, the last 7 days, where the time went, the live timer, the open scroll, and stalled scrolls (idle 7+ days) with their next item. For questions and weekly reviews there is also a `/cogitator` Claude skill in the vault, which uses `scripts/cogitator_stats.py`. |
+| **Cogitator** (home) | Dashboard of your record, counted by the app from the vault logs: today's focus against your **daily goal**, streak, the last 7 days (with the goal line), where the time went by task and **by project**, the live timer, the open scroll, and stalled scrolls (idle 7+ days) with their next item. Set or turn off the goal with **Change goal**. For questions and weekly reviews there is also a `/cogitator` Claude skill in the vault, which uses `scripts/cogitator_stats.py`. |
 | **Data Stylus** ✎ | Paste a task. Prose is broken into subtasks (on sentences, semicolons, "then" and "after that"); bullet or checkbox lists are kept as they are, nesting included. Sealing writes a Markdown checklist to the vault. Ticks update that note, and ticks made in Obsidian come back when you focus the widget. |
-| **Chrono-Siphon** ⧗ | A Pomodoro timer drawn as a gothic stasis hourglass: bronze frame, skull finial, winged-skull cap, crux pendant. Name the quarry, set the minutes, invoke stasis, and record the verdict when the sands run out. |
+| **Chrono-Siphon** ⧗ | A Pomodoro timer drawn as a gothic stasis hourglass: bronze frame, skull finial, winged-skull cap, crux pendant. Name the quarry, pick a **project** (any note in the vault's `Projects/` folder, or none), set the minutes, invoke stasis, and record the verdict when the sands run out. |
 
 Inspired by the desktop widgets in Tina Huang's [Learn 10X Faster In 10 Minutes](https://www.youtube.com/watch?v=sbmP6i-MChk).
 
@@ -39,8 +39,9 @@ The visual language follows Owlcat's *Warhammer 40,000: Rogue Trader* UI, and th
 [Tauri 2](https://v2.tauri.app/) with a React 19 + TypeScript + Vite frontend.
 
 - **Windows:** the `main` window is the full app. On the desktop, the **Pop out** button on a section opens it as a widget window (`data-stylus` or `chrono-siphon`). Every window loads the same page, and `src/main.tsx` picks what to show from the window's label.
+- **Settings:** `settings.json` holds the vault, the daily goal (`daily_goal`, minutes; default 120, 0 = off) and the popped-out widgets.
 - **Remembered pop-outs:** popped-out widgets are saved in `settings.json` and reopened on the next launch. Closing the main window quits the app and keeps that list. Closing a widget on its own forgets it.
-- **Shared state:** the Chrono-Siphon timer lives in the Rust backend, so the main app and a widget always show the same timer, and only one window tolls when it ends. The open Data Stylus scroll is shared through app events (`scroll-changed`), and the dashboard refreshes on `log-changed`.
+- **Shared state:** the Chrono-Siphon timer lives in the Rust backend, so the main app and a widget always show the same timer, and only one window tolls when it ends. The open Data Stylus scroll is shared through app events (`scroll-changed`), and the dashboard refreshes on `log-changed` and `goal-changed`.
 - **Phones:** narrow windows (under 640px) get a bottom tab bar instead of the sidebar, ready for a future mobile build. Pop-outs are desktop only.
 
 ## Setup (Windows)
@@ -79,13 +80,17 @@ Everything goes under `<vault>/Sources/Journal/Widgets/`. Set `DARK_CELLS_LOG_DI
 
 ```markdown
 - 14:32 · Chrono-Siphon · 25 min · film demo
+- 15:10 · Chrono-Siphon · 25 min · HUD prototype · [[Cogitorium]]
 - 14:40 · Data Stylus · completed · Modern C++ chapter 1 · UE5 C++ refresh
 ```
+
+A session tagged with a project ends with a link to that project's note, so the note's backlinks in Obsidian list every session spent on it.
 
 ## Cogitator stats
 
 The dashboard's numbers come from the backend's `cogitator_stats` command (`src-tauri/src/lib.rs`). The same rules are available as a script for the `/cogitator` skill and for command-line use. `scripts/cogitator_stats.py` (Python standard library only) counts what the widgets logged for a date range:
-- focus minutes by day, task and hour, and streaks
+- focus minutes by day, task, project and hour, and streaks
+- days that met the daily goal (the app's, or `--goal <minutes>`)
 - subtask completions
 - every scroll's progress and idle days, with scrolls idle 7+ days marked as stalled
 
@@ -108,7 +113,8 @@ src/                       React frontend (runs in the system webview)
   components/WidgetFrame   frame and title bar for popped-out widget windows
   components/TitleBar      drag region, vault, pin, minimise, close
   lib/timer.ts             the shared Chrono-Siphon timer (backend commands + events)
-  lib/stats.ts             dashboard numbers (backend command; sample data in the browser)
+  lib/projects.ts          project notes for tagging sessions
+  lib/stats.ts             dashboard numbers and the daily goal (backend commands; sample data in the browser)
   lib/events.ts            events between windows
   lib/widgets.ts           pop-out helpers
   lib/vaultLog.ts          calls the Rust append_log command

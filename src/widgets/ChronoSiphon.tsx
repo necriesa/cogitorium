@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { SigilDefs } from "../components/Sigils";
 import { logToVault } from "../lib/vaultLog";
 import { remainingMs, useSharedTimer } from "../lib/timer";
+import { projectLink, useProjects } from "../lib/projects";
 
 type Phase = "idle" | "running" | "paused" | "finished";
 
@@ -177,14 +178,17 @@ function Hourglass({ fraction, phase }: { fraction: number; phase: Phase }) {
  */
 export default function ChronoSiphon() {
   const { timer, now, start, pause, resume, reset } = useSharedTimer({ watch: true });
+  const projects = useProjects();
   const [task, setTask] = useState("");
+  const [project, setProject] = useState("");
   const [minutes, setMinutes] = useState(25);
   const [status, setStatus] = useState("");
 
-  // Start the form from the last timer's task and length.
+  // Start the form from the last timer's task, project and length.
   useEffect(() => {
     if (timer && timer.phase === "idle") {
       setTask((t) => t || timer.task);
+      setProject((p) => p || timer.project);
       setMinutes(timer.minutes);
     }
     // only when the timer first loads or returns to idle
@@ -199,7 +203,7 @@ export default function ChronoSiphon() {
   async function recordVerdict() {
     if (!timer) return;
     try {
-      const file = await logToVault("Chrono-Siphon", `${timer.minutes} min`, timer.task || "unnamed quarry");
+      const file = await logToVault("Chrono-Siphon", `${timer.minutes} min`, timer.task || "unnamed quarry", projectLink(timer.project));
       setStatus(`Verdict recorded in ${file.split(/[\\/]/).pop()}`);
       await reset();
     } catch (err) {
@@ -234,6 +238,7 @@ export default function ChronoSiphon() {
           ))}
         </div>
         {phase !== "idle" && <div className="readout-quarry">{timer?.task || "Unnamed quarry"}</div>}
+        {phase !== "idle" && timer?.project && <div className="readout-project">For {timer.project}</div>}
       </section>
 
       {phase === "idle" && (
@@ -241,6 +246,18 @@ export default function ChronoSiphon() {
           <label className="field">
             <span className="label">Quarry</span>
             <input className="input" value={task} onChange={(e) => setTask(e.target.value)} placeholder="What must fall?" />
+          </label>
+          <label className="field">
+            <span className="label">Project</span>
+            <select className="input select" value={project} onChange={(e) => setProject(e.target.value)}>
+              <option value="">None</option>
+              {/* keep a project from an earlier session even if its note was renamed since */}
+              {[...projects, ...(project && !projects.includes(project) ? [project] : [])].map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
           </label>
           <div className="field">
             <span className="label">Duration</span>
@@ -271,7 +288,7 @@ export default function ChronoSiphon() {
             className="btn primary"
             onClick={() => {
               setStatus("");
-              void start(task, minutes);
+              void start(task, minutes, project);
             }}
           >
             Invoke stasis

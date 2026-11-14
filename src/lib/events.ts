@@ -7,9 +7,11 @@ import { emit, listen } from "@tauri-apps/api/event";
  * - scroll-changed: a Data Stylus scroll was written, opened or closed
  * - log-changed: a line was added to the daily log (the dashboard refreshes)
  * - widgets-changed: a widget was popped out or closed (payload: open labels)
+ * - goal-changed: the daily focus goal was set (payload: minutes)
+ * - vault-changed: a different vault folder was chosen (payload: its path)
  * In a plain browser (`npm run dev`) they stay inside the page.
  */
-export type AppEvent = "timer-changed" | "scroll-changed" | "log-changed" | "widgets-changed";
+export type AppEvent = "timer-changed" | "scroll-changed" | "log-changed" | "widgets-changed" | "goal-changed" | "vault-changed";
 
 const local = new EventTarget();
 

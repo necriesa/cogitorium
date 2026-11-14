@@ -3,6 +3,7 @@
 Reads, inside the vault's widget folder (default `Sources/Journal/Widgets`):
   - daily logs `<YYYY-MM-DD>.md`, one line per action:
         - 14:32 · Chrono-Siphon · 25 min · film demo
+        - 14:32 · Chrono-Siphon · 25 min · film demo · [[Cogitorium]]   (project tag, v0.6+)
         - 14:40 · Data Stylus · completed · <subtask> · <task>
         - 14:41 · Data Stylus · task begun · <task> · 4 subtasks
     Older logs use earlier widget names (Tempormortis / Chronoglass for the
@@ -11,7 +12,8 @@ Reads, inside the vault's widget folder (default `Sources/Journal/Widgets`):
     `updated:` and `progress:` frontmatter).
 
 Prints a Markdown report (or JSON with --json) for a date range: focus
-minutes per day, task and hour, streaks, subtask completions, and every
+minutes per day, task, project and hour, streaks, days that met the daily
+focus goal (set on the app's dashboard), subtask completions, and every
 scroll's progress and idle days. The `/cogitator` skill in the vault runs
 this for the numbers and does the interpreting itself.
 
@@ -20,6 +22,7 @@ Usage:
     python cogitator_stats.py --days 30
     python cogitator_stats.py --from 2026-11-01 --to 2026-11-30
     python cogitator_stats.py --vault "D:/path/to/vault" --json
+    python cogitator_stats.py --goal 90       # override the app's daily goal (minutes; 0 = none)
 
 Standard library only.
 """
@@ -44,12 +47,14 @@ STALLED_AFTER_DAYS = 7
 # Log names for each widget, current first. Earlier versions used the older names.
 TIMER_NAMES = {"Chrono-Siphon", "Chronoglass", "Tempormortis"}
 STYLUS_NAMES = {"Data Stylus", "Auto Quill"}
+DEFAULT_GOAL_MINUTES = 120
+PROJECT_LINK = re.compile(r"^\[\[([^\]|]+)(?:\|[^\]]*)?\]\]$")
 
 
 # ---------------------------------------------------------------- locating
 
-def settings_vault() -> Path | None:
-    """The vault the widgets app saved (Windows: %APPDATA%; macOS/Linux: config dir)."""
+def app_settings() -> dict:
+    """The app's settings.json with a vault that still exists (Windows: %APPDATA%; macOS/Linux: config dir)."""
     candidates = []
     if os.environ.get("APPDATA"):
         candidates.append(Path(os.environ["APPDATA"]))
@@ -59,12 +64,25 @@ def settings_vault() -> Path | None:
         for app_id in ("com.necriesa.cogitorium", "com.necriesa.darkcellswidgets"):
             f = base / app_id / "settings.json"
             try:
-                vault = json.loads(f.read_text(encoding="utf-8")).get("vault")
+                data = json.loads(f.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 continue
+            vault = data.get("vault")
             if vault and Path(vault).is_dir():
-                return Path(vault)
-    return None
+                return data
+    return {}
+
+
+def settings_vault() -> Path | None:
+    """The vault the app saved."""
+    vault = app_settings().get("vault")
+    return Path(vault) if vault else None
+
+
+def settings_goal() -> int:
+    """The daily focus goal set on the dashboard, in minutes (0 = none)."""
+    goal = app_settings().get("daily_goal", DEFAULT_GOAL_MINUTES)
+    return goal if isinstance(goal, int) and goal >= 0 else DEFAULT_GOAL_MINUTES
 
 
 def widget_dir(vault: Path) -> Path:
@@ -80,6 +98,13 @@ class Session:
     hour: int
     minutes: int
     task: str
+    project: str | None = None
+
+
+def project_tag(text: str) -> str | None:
+    """`[[Cogitorium]]` (or `[[Cogitorium|alias]]`) -> "Cogitorium"."""
+    m = PROJECT_LINK.match(text.strip())
+    return m.group(1).strip() or None if m else None
 
 
 @dataclass
@@ -144,7 +169,8 @@ def read_logs(folder: Path, start: date, end: date):
                     unparsed += 1
                     continue
                 task = fields[2] if len(fields) > 2 else "untitled"
-                sessions.append(Session(day, hour, mins, task))
+                project = project_tag(fields[3]) if len(fields) > 3 else None
+                sessions.append(Session(day, hour, mins, task, project))
             elif widget in STYLUS_NAMES and len(fields) >= 3:
                 action = fields[1]
                 if action in ("completed", "reopened"):
@@ -217,7 +243,7 @@ def streaks(active_days: set[date], start: date, end: date) -> tuple[int, int]:
     return current, longest
 
 
-def build(vault: Path, start: date, end: date, today: date) -> dict:
+def build(vault: Path, start: date, end: date, today: date, goal: int = 0) -> dict:
     folder = widget_dir(vault)
     sessions, ticks, unparsed, days_with_logs = read_logs(folder, start, end)
     scrolls = read_scrolls(folder, today)
@@ -228,8 +254,14 @@ def build(vault: Path, start: date, end: date, today: date) -> dict:
         by_day_min[s.day] += s.minutes
         by_day_n[s.day] += 1
     by_task = Counter()
+    by_project = Counter()
+    untagged = 0
     for s in sessions:
         by_task[s.task] += s.minutes
+        if s.project:
+            by_project[s.project] += s.minutes
+        else:
+            untagged += s.minutes
     by_hour = Counter()
     for s in sessions:
         by_hour[s.hour] += s.minutes
@@ -238,6 +270,7 @@ def build(vault: Path, start: date, end: date, today: date) -> dict:
     cur, longest = streaks(focus_days, start, end)
     total_min = sum(s.minutes for s in sessions)
     span = (end - start).days + 1
+    goal_days = [d for d, m in by_day_min.items() if goal and m >= goal]
 
     completed = [t for t in ticks if t.action == "completed"]
     reopened = [t for t in ticks if t.action == "reopened"]
@@ -264,6 +297,10 @@ def build(vault: Path, start: date, end: date, today: date) -> dict:
                 for i in range(span)
             ],
             "by_task": [{"task": t, "minutes": m} for t, m in by_task.most_common()],
+            "by_project": [{"project": p, "minutes": m} for p, m in by_project.most_common()],
+            "untagged_minutes": untagged,
+            "goal_minutes": goal,
+            "goal_days_met": len(goal_days),
             "by_hour": [{"hour": h, "minutes": by_hour[h]} for h in sorted(by_hour)],
         },
         "tasks": {
@@ -306,6 +343,8 @@ def to_markdown(r: dict) -> str:
         f"- Sessions: {f['sessions']} · total {hm(f['minutes'])} · active days {f['active_days']}/{r['range']['days']}"
         f" · average {hm(f['avg_minutes_per_active_day'])} per active day",
         f"- Streak: current {f['current_streak_days']} day(s), longest in range {f['longest_streak_days']}",
+        (f"- Daily goal {hm(f['goal_minutes'])}: met on {f['goal_days_met']}/{r['range']['days']} days"
+         if f["goal_minutes"] else "- Daily goal: none set"),
         "",
         "| Date | Sessions | Focus | Subtasks done | |",
         "|---|---|---|---|---|",
@@ -316,6 +355,10 @@ def to_markdown(r: dict) -> str:
         out.append(f"| {d['date']} {wd} | {d['sessions']} | {hm(d['minutes'])} | {d['subtasks_completed']} | {bar(d['minutes'], peak)} |")
     if f["by_task"]:
         out += ["", "### Focus by task"] + [f"- {x['task']}: {hm(x['minutes'])}" for x in f["by_task"][:12]]
+    if f["by_project"]:
+        out += ["", "### Focus by project"] + [f"- [[{x['project']}]]: {hm(x['minutes'])}" for x in f["by_project"]]
+        if f["untagged_minutes"]:
+            out.append(f"- untagged: {hm(f['untagged_minutes'])}")
     if f["by_hour"]:
         out += ["", "### Focus by hour started"] + [f"- {x['hour']:02d}:00 {bar(x['minutes'], max(y['minutes'] for y in f['by_hour']), 12)} {hm(x['minutes'])}" for x in f["by_hour"]]
     out += [
@@ -351,6 +394,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--days", type=int, default=7, help="last N days including today (default 7)")
     ap.add_argument("--from", dest="start", help="start date YYYY-MM-DD")
     ap.add_argument("--to", dest="end", help="end date YYYY-MM-DD (default today)")
+    ap.add_argument("--goal", type=int, help="daily focus goal in minutes (default: the app's; 0 = none)")
     ap.add_argument("--today", help=argparse.SUPPRESS)  # for tests
     ap.add_argument("--json", action="store_true", help="print JSON instead of Markdown")
     a = ap.parse_args(argv)
@@ -366,7 +410,8 @@ def main(argv: list[str] | None = None) -> int:
         print("--from is after --to", file=sys.stderr)
         return 2
 
-    report = build(vault, start, end, today)
+    goal = a.goal if a.goal is not None else settings_goal()
+    report = build(vault, start, end, today, max(0, goal))
     if a.json:
         print(json.dumps(report, indent=2, ensure_ascii=False))
     else:

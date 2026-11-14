@@ -22,13 +22,31 @@ use tauri::{AppHandle, Emitter, Manager, State};
 /// Folder inside the vault where widget logs land, unless `DARK_CELLS_LOG_DIR` overrides it.
 const DEFAULT_LOG_DIR: &str = "Sources/Journal/Widgets";
 
+/// Daily focus goal until one is chosen on the dashboard.
+const DEFAULT_GOAL_MINUTES: u32 = 120;
+/// Longest daily goal that can be set (12 hours).
+const MAX_GOAL_MINUTES: u32 = 720;
+
+fn default_goal() -> u32 {
+    DEFAULT_GOAL_MINUTES
+}
+
 /// What is saved in `settings.json`.
-#[derive(Default, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct Settings {
     vault: Option<PathBuf>,
     /// Widgets popped out of the main window; reopened on the next launch.
     #[serde(default)]
     open_widgets: Vec<String>,
+    /// Focus minutes per day the dashboard measures against; 0 turns the goal off.
+    #[serde(default = "default_goal")]
+    daily_goal: u32,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings { vault: None, open_widgets: Vec::new(), daily_goal: DEFAULT_GOAL_MINUTES }
+    }
 }
 
 /// Shared app state.
@@ -155,6 +173,39 @@ fn set_vault(app: AppHandle, state: State<AppState>, path: String) -> Result<Str
     let shown = path.display().to_string();
     let _ = app.emit("vault-changed", &shown);
     Ok(shown)
+}
+
+/// Sets the daily focus goal in minutes (0 turns it off), saves it, and tells every window.
+#[tauri::command]
+fn set_goal(app: AppHandle, state: State<AppState>, minutes: u32) -> Result<u32, String> {
+    let minutes = minutes.min(MAX_GOAL_MINUTES);
+    {
+        let mut settings = settings_lock(&state)?;
+        settings.daily_goal = minutes;
+        save_settings(&state.settings_file, &settings)?;
+    }
+    let _ = app.emit("goal-changed", minutes);
+    Ok(minutes)
+}
+
+/// Project notes in the vault (`Projects/*.md`), by name, for tagging timer sessions.
+fn list_projects_in(vault: &Path) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(vault.join("Projects")) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = entries
+        .filter_map(Result::ok)
+        .filter(|e| e.path().is_file())
+        .filter_map(|e| e.file_name().to_string_lossy().strip_suffix(".md").map(str::to_string))
+        .filter(|n| !n.is_empty() && !n.starts_with('.'))
+        .collect();
+    names.sort_by_key(|n| n.to_lowercase());
+    names
+}
+
+#[tauri::command]
+fn list_projects(state: State<AppState>) -> Result<Vec<String>, String> {
+    Ok(list_projects_in(&vault_root(&state)?))
 }
 
 /// The log folder inside `vault`, which must stay inside it.
@@ -288,6 +339,8 @@ struct Timer {
     /// idle | running | paused | finished
     phase: &'static str,
     task: String,
+    /// Project note the session is tagged with (empty for none).
+    project: String,
     minutes: u32,
     /// When a running timer ends.
     end_at: Option<u64>,
@@ -297,14 +350,14 @@ struct Timer {
 
 impl Default for Timer {
     fn default() -> Self {
-        Timer { phase: "idle", task: String::new(), minutes: 25, end_at: None, remaining_ms: None }
+        Timer { phase: "idle", task: String::new(), project: String::new(), minutes: 25, end_at: None, remaining_ms: None }
     }
 }
 
 impl Timer {
-    fn start(&mut self, task: String, minutes: u32, now: u64) {
+    fn start(&mut self, task: String, project: String, minutes: u32, now: u64) {
         let minutes = minutes.clamp(1, 180);
-        *self = Timer { phase: "running", task, minutes, end_at: Some(now + u64::from(minutes) * 60_000), remaining_ms: None };
+        *self = Timer { phase: "running", task, project, minutes, end_at: Some(now + u64::from(minutes) * 60_000), remaining_ms: None };
     }
     fn pause(&mut self, now: u64) {
         if let ("running", Some(end)) = (self.phase, self.end_at) {
@@ -364,9 +417,10 @@ fn timer_get(state: State<AppState>) -> Result<Timer, String> {
 }
 
 #[tauri::command]
-fn timer_start(app: AppHandle, state: State<AppState>, task: String, minutes: u32) -> Result<Timer, String> {
+fn timer_start(app: AppHandle, state: State<AppState>, task: String, project: Option<String>, minutes: u32) -> Result<Timer, String> {
+    let project = project.unwrap_or_default().trim().to_string();
     Ok(update_timer(&app, &state, |t| {
-        t.start(task, minutes, now_ms());
+        t.start(task, project, minutes, now_ms());
         true
     })?
     .0)
@@ -412,7 +466,7 @@ fn timer_finish(app: AppHandle, state: State<AppState>) -> Result<bool, String> 
 /// The widgets that can be popped out of the main window: label, title, size, resizable.
 const WIDGETS: [(&str, &str, f64, f64, bool); 2] = [
     ("data-stylus", "Data Stylus", 380.0, 620.0, true),
-    ("chrono-siphon", "Chrono-Siphon", 300.0, 600.0, false),
+    ("chrono-siphon", "Chrono-Siphon", 300.0, 660.0, false),
 ];
 
 fn is_widget(label: &str) -> bool {
@@ -539,6 +593,14 @@ struct Stats {
     /// Oldest first, ending today.
     days: Vec<DayStat>,
     by_task: Vec<TaskStat>,
+    /// Focus per project tag over the range; untagged sessions are left out.
+    by_project: Vec<TaskStat>,
+    /// Minutes in untagged sessions over the range.
+    untagged_minutes: u32,
+    /// Daily focus goal in minutes (0 = off).
+    goal_minutes: u32,
+    /// Days in the range that reached the goal.
+    goal_days_met: u32,
     scrolls: Vec<ScrollStat>,
 }
 
@@ -577,6 +639,22 @@ fn format_day(day: i64) -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
+/// One recorded Chrono-Siphon session.
+struct Session {
+    day: i64,
+    task: String,
+    project: Option<String>,
+    minutes: u32,
+}
+
+/// The project in a session's tag field, written as an Obsidian link: `[[Cogitorium]]`
+/// (an alias, `[[Cogitorium|Cog]]`, is ignored).
+fn project_tag(field: &str) -> Option<String> {
+    let inner = field.trim().strip_prefix("[[")?.strip_suffix("]]")?;
+    let name = inner.split('|').next()?.trim();
+    (!name.is_empty()).then(|| name.to_string())
+}
+
 #[derive(Default)]
 struct DayTotals {
     minutes: u32,
@@ -584,8 +662,9 @@ struct DayTotals {
     subtasks_done: u32,
 }
 
-/// Reads every daily log: totals per day, and focus minutes per (day, task).
-fn read_day_totals(folder: &Path) -> (std::collections::HashMap<i64, DayTotals>, Vec<(i64, String, u32)>) {
+/// Reads every daily log: totals per day, and every focus session.
+/// A session line is `- HH:MM · Chrono-Siphon · 25 min · <task> · [[<project>]]`; the project is optional.
+fn read_day_totals(folder: &Path) -> (std::collections::HashMap<i64, DayTotals>, Vec<Session>) {
     let mut days = std::collections::HashMap::<i64, DayTotals>::new();
     let mut sessions = Vec::new();
     let Ok(entries) = fs::read_dir(folder) else {
@@ -616,7 +695,8 @@ fn read_day_totals(folder: &Path) -> (std::collections::HashMap<i64, DayTotals>,
                 totals.minutes += minutes;
                 totals.sessions += 1;
                 let task = fields.get(3).copied().unwrap_or("untitled").to_string();
-                sessions.push((day, task, minutes));
+                let project = fields.get(4).and_then(|f| project_tag(f));
+                sessions.push(Session { day, task, project, minutes });
             } else if STYLUS_NAMES.contains(&widget) && fields[2] == "completed" {
                 days.entry(day).or_default().subtasks_done += 1;
             }
@@ -682,7 +762,7 @@ fn read_scroll_stats(folder: &Path, today: i64) -> Vec<ScrollStat> {
 }
 
 /// Builds the dashboard numbers for the `days` days ending `today` (YYYY-MM-DD, the user's local date).
-fn compute_stats(vault: &Path, today: &str, days: u32) -> Result<Stats, String> {
+fn compute_stats(vault: &Path, today: &str, days: u32, goal_minutes: u32) -> Result<Stats, String> {
     let today_n = parse_day(today).ok_or_else(|| format!("Bad date: {today}"))?;
     let days = days.clamp(1, 366) as i64;
     let folder = log_dir(vault)?;
@@ -709,27 +789,42 @@ fn compute_stats(vault: &Path, today: &str, days: u32) -> Result<Stats, String> 
 
     let start = today_n - days + 1;
     let mut by_task = std::collections::HashMap::<String, u32>::new();
-    for (day, task, minutes) in &sessions {
-        if (start..=today_n).contains(day) {
-            *by_task.entry(task.clone()).or_default() += minutes;
+    let mut by_project = std::collections::HashMap::<String, u32>::new();
+    let mut untagged_minutes = 0;
+    for s in sessions.iter().filter(|s| (start..=today_n).contains(&s.day)) {
+        *by_task.entry(s.task.clone()).or_default() += s.minutes;
+        match &s.project {
+            Some(p) => *by_project.entry(p.clone()).or_default() += s.minutes,
+            None => untagged_minutes += s.minutes,
         }
     }
-    let mut by_task: Vec<TaskStat> = by_task.into_iter().map(|(task, minutes)| TaskStat { task, minutes }).collect();
-    by_task.sort_by(|a, b| b.minutes.cmp(&a.minutes).then(a.task.cmp(&b.task)));
-    by_task.truncate(6);
+    let ranked = |map: std::collections::HashMap<String, u32>| {
+        let mut list: Vec<TaskStat> = map.into_iter().map(|(task, minutes)| TaskStat { task, minutes }).collect();
+        list.sort_by(|a, b| b.minutes.cmp(&a.minutes).then(a.task.cmp(&b.task)));
+        list.truncate(6);
+        list
+    };
+
+    let days: Vec<DayStat> = (start..=today_n).map(day_stat).collect();
+    let goal_days_met = if goal_minutes == 0 { 0 } else { days.iter().filter(|d| d.minutes >= goal_minutes).count() as u32 };
 
     Ok(Stats {
         today: day_stat(today_n),
         streak,
-        days: (start..=today_n).map(day_stat).collect(),
-        by_task,
+        days,
+        by_task: ranked(by_task),
+        by_project: ranked(by_project),
+        untagged_minutes,
+        goal_minutes,
+        goal_days_met,
         scrolls: read_scroll_stats(&folder, today_n),
     })
 }
 
 #[tauri::command]
 fn cogitator_stats(state: State<AppState>, today: String, days: u32) -> Result<Stats, String> {
-    compute_stats(&vault_root(&state)?, &today, days)
+    let goal = settings_lock(&state)?.daily_goal;
+    compute_stats(&vault_root(&state)?, &today, days, goal)
 }
 
 // =====================================================================
@@ -799,7 +894,9 @@ pub fn run() {
             open_widget,
             open_widgets,
             is_desktop,
-            cogitator_stats
+            cogitator_stats,
+            set_goal,
+            list_projects
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -932,22 +1029,25 @@ mod tests {
     fn saving_the_vault_keeps_open_widgets() {
         let dir = temp_dir("keep");
         let file = dir.join("settings.json");
-        let settings = Settings { vault: None, open_widgets: vec!["chrono-siphon".into()] };
+        let settings = Settings { vault: None, open_widgets: vec!["chrono-siphon".into()], daily_goal: 90 };
         save_settings(&file, &settings).unwrap();
         save_vault(&file, &dir).unwrap();
         let back = load_settings(&file);
         assert_eq!(back.vault, Some(dir.clone()));
         assert_eq!(back.open_widgets, vec!["chrono-siphon".to_string()]);
-        // Older settings files without open_widgets still load.
+        assert_eq!(back.daily_goal, 90);
+        // Older settings files without open_widgets or a goal still load, with the default goal.
         fs::write(&file, r#"{"vault": null}"#).unwrap();
-        assert!(load_settings(&file).open_widgets.is_empty());
+        let old = load_settings(&file);
+        assert!(old.open_widgets.is_empty());
+        assert_eq!(old.daily_goal, DEFAULT_GOAL_MINUTES);
         fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn timer_pauses_and_resumes_where_it_left_off() {
         let mut t = Timer::default();
-        t.start("quarry".into(), 25, 1_000);
+        t.start("quarry".into(), "Cogitorium".into(), 25, 1_000);
         assert_eq!((t.phase, t.end_at), ("running", Some(1_000 + 25 * 60_000)));
         t.pause(61_000); // a minute in
         assert_eq!((t.phase, t.remaining_ms), ("paused", Some(24 * 60_000)));
@@ -960,10 +1060,25 @@ mod tests {
         assert!(!t.finish(end + 5));
         assert_eq!(t.phase, "finished");
         t.reset();
-        assert_eq!((t.phase, t.task.as_str(), t.minutes), ("idle", "quarry", 25));
+        assert_eq!((t.phase, t.task.as_str(), t.project.as_str(), t.minutes), ("idle", "quarry", "Cogitorium", 25));
         // Minutes are clamped.
-        t.start(String::new(), 999, 0);
+        t.start(String::new(), String::new(), 999, 0);
         assert_eq!(t.minutes, 180);
+    }
+
+    #[test]
+    fn project_tags_are_obsidian_links() {
+        assert_eq!(project_tag("[[Cogitorium]]").as_deref(), Some("Cogitorium"));
+        assert_eq!(project_tag(" [[Job Applications|Jobs]] ").as_deref(), Some("Job Applications"));
+        assert_eq!(project_tag("Cogitorium"), None);
+        assert_eq!(project_tag("[[]]"), None);
+        let vault = temp_dir("projects");
+        fs::create_dir_all(vault.join("Projects")).unwrap();
+        for f in ["Zeta.md", "cogitorium.md", "notes.txt", ".hidden.md"] {
+            fs::write(vault.join("Projects").join(f), "").unwrap();
+        }
+        assert_eq!(list_projects_in(&vault), vec!["cogitorium".to_string(), "Zeta".to_string()]);
+        fs::remove_dir_all(&vault).unwrap();
     }
 
     #[test]
@@ -984,19 +1099,26 @@ mod tests {
         log("2026-11-09", &["- 09:10 · Tempormortis · 45 min · UE5 C++ refresh"]);
         log("2026-11-10", &["- 09:30 · Chronoglass · 25 min · UE5 HUD", "- 10:00 · Auto Quill · completed · a · UE5 HUD"]);
         log("2026-11-11", &["- 08:45 · Chrono-Siphon · 60 min · UE5 HUD", "- 19:00 · Data Stylus · completed · b · Reset", "- 19:01 · Data Stylus · reopened · b · Reset", "junk"]);
-        log("2026-11-12", &["- 09:15 · Chrono-Siphon · 25 min · UE5 HUD", "- 09:50 · Chrono-Siphon · 20 min · Job apps"]);
+        log("2026-11-12", &["- 09:15 · Chrono-Siphon · 25 min · UE5 HUD · [[Cogitorium]]", "- 09:50 · Chrono-Siphon · 20 min · Job apps · [[Job Applications|Jobs]]", "- 10:20 · Chrono-Siphon · 15 min · UE5 HUD · [[Cogitorium]]"]);
         log("2026-10-01", &["- 09:00 · Chrono-Siphon · 25 min · old"]);
         fs::write(w.join("Scrolls/HUD.md"), "---\nupdated: 2026-11-02 10:00\n---\n# UE5 HUD\n\n- [x] a\n- [ ] build the bar\n  - [ ] bind it\n").unwrap();
         fs::write(w.join("Scrolls/Reset.md"), "---\nupdated: 2026-11-12 16:00\n---\n# Reset\n\n- [x] a\n- [x] b\n").unwrap();
 
-        let s = compute_stats(&vault, "2026-11-12", 7).unwrap();
-        assert_eq!((s.today.minutes, s.today.sessions), (45, 2));
+        let s = compute_stats(&vault, "2026-11-12", 7, 60).unwrap();
+        assert_eq!((s.today.minutes, s.today.sessions), (60, 3));
         assert_eq!(s.streak, 4);
         assert_eq!(s.days.len(), 7);
         assert_eq!(s.days.first().unwrap().date, "2026-11-06");
-        assert_eq!(s.days.iter().map(|d| d.minutes).sum::<u32>(), 175, "old log is outside the week");
+        assert_eq!(s.days.iter().map(|d| d.minutes).sum::<u32>(), 190, "old log is outside the week");
         assert_eq!(s.days.iter().map(|d| d.subtasks_done).sum::<u32>(), 2);
-        assert_eq!((s.by_task[0].task.as_str(), s.by_task[0].minutes), ("UE5 HUD", 110));
+        assert_eq!((s.by_task[0].task.as_str(), s.by_task[0].minutes), ("UE5 HUD", 125));
+        // Project tags: aliases are dropped, untagged (older) sessions are counted apart.
+        let projects: Vec<(&str, u32)> = s.by_project.iter().map(|p| (p.task.as_str(), p.minutes)).collect();
+        assert_eq!(projects, vec![("Cogitorium", 40), ("Job Applications", 20)]);
+        assert_eq!(s.untagged_minutes, 130);
+        // Goal of 60 minutes: met on the 11th (60) and the 12th (60), not the 9th (45) or 10th (25).
+        assert_eq!((s.goal_minutes, s.goal_days_met), (60, 2));
+        assert_eq!(compute_stats(&vault, "2026-11-12", 7, 0).unwrap().goal_days_met, 0, "a goal of 0 is off");
         let hud = s.scrolls.iter().find(|x| x.title == "UE5 HUD").unwrap();
         assert_eq!((hud.done, hud.total, hud.status, hud.idle_days), (1, 3, "stalled", Some(10)));
         assert_eq!(hud.next_item.as_deref(), Some("build the bar"));
@@ -1004,10 +1126,10 @@ mod tests {
         assert_eq!(s.scrolls.iter().find(|x| x.title == "Reset").unwrap().status, "complete");
 
         // No session yet today: yesterday's streak still counts.
-        let s = compute_stats(&vault, "2026-11-13", 7).unwrap();
+        let s = compute_stats(&vault, "2026-11-13", 7, 60).unwrap();
         assert_eq!((s.today.minutes, s.streak), (0, 4));
         // A missed day breaks it.
-        assert_eq!(compute_stats(&vault, "2026-11-14", 7).unwrap().streak, 0);
+        assert_eq!(compute_stats(&vault, "2026-11-14", 7, 60).unwrap().streak, 0);
         fs::remove_dir_all(&vault).unwrap();
     }
 }

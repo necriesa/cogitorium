@@ -6,6 +6,8 @@ import { emitApp, onApp } from "./events";
 export type TimerState = {
   phase: "idle" | "running" | "paused" | "finished";
   task: string;
+  /** Project note the session is tagged with ("" for none). */
+  project: string;
   minutes: number;
   /** Unix ms when a running timer ends. */
   endAt: number | null;
@@ -14,16 +16,18 @@ export type TimerState = {
 };
 
 // In a plain browser there is no Rust backend, so a copy of its rules runs here.
-let browserTimer: TimerState = { phase: "idle", task: "", minutes: 25, endAt: null, remainingMs: null };
+let browserTimer: TimerState = { phase: "idle", task: "", project: "", minutes: 25, endAt: null, remainingMs: null };
 
-function browserApply(cmd: string, args: { task?: string; minutes?: number } = {}): TimerState | boolean {
+type Args = { task?: string; project?: string; minutes?: number };
+
+function browserApply(cmd: string, args: Args = {}): TimerState | boolean {
   const now = Date.now();
   const t = browserTimer;
   let finished = false;
   switch (cmd) {
     case "timer_start": {
       const minutes = Math.min(180, Math.max(1, Math.round(args.minutes ?? 25)));
-      browserTimer = { phase: "running", task: args.task ?? "", minutes, endAt: now + minutes * 60_000, remainingMs: null };
+      browserTimer = { phase: "running", task: args.task ?? "", project: (args.project ?? "").trim(), minutes, endAt: now + minutes * 60_000, remainingMs: null };
       break;
     }
     case "timer_pause":
@@ -46,7 +50,7 @@ function browserApply(cmd: string, args: { task?: string; minutes?: number } = {
   return cmd === "timer_finish" ? finished : browserTimer;
 }
 
-async function call<T>(cmd: string, args?: { task?: string; minutes?: number }): Promise<T> {
+async function call<T>(cmd: string, args?: Args): Promise<T> {
   if (isTauri()) return invoke<T>(cmd, args);
   return browserApply(cmd, args) as T;
 }
@@ -111,7 +115,10 @@ export function useSharedTimer({ watch = false } = {}) {
       .catch(() => {});
   }, [watch, timer, now]);
 
-  const start = useCallback((task: string, minutes: number) => call<TimerState>("timer_start", { task, minutes }).then(setTimer), []);
+  const start = useCallback(
+    (task: string, minutes: number, project = "") => call<TimerState>("timer_start", { task, minutes, project }).then(setTimer),
+    [],
+  );
   const pause = useCallback(() => call<TimerState>("timer_pause").then(setTimer), []);
   const resume = useCallback(() => call<TimerState>("timer_resume").then(setTimer), []);
   const reset = useCallback(() => call<TimerState>("timer_reset").then(setTimer), []);
