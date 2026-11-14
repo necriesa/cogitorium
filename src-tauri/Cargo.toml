@@ -1,6 +1,6 @@
 [package]
 name = "cogitorium"
-version = "0.7.0"
+version = "0.7.1"
 description = "Cogitorium: gothic sci-fi productivity widgets that log to an Obsidian vault"
 authors = ["necriesa"]
 edition = "2024"

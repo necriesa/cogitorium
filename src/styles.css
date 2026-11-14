@@ -929,6 +929,10 @@ button {
   padding: 0;
 }
 .rites li {
+  /* Holds the hidden checkbox inside the screen. Without it the checkbox is placed
+     against the page, so long scrolls made the page itself scroll and ticking a
+     low item scrolled the slate out of view. */
+  position: relative;
   border-bottom: 1px solid rgba(29, 58, 32, 0.7);
 }
 .rites li:last-child {
@@ -946,6 +950,9 @@ button {
 }
 .rites input {
   position: absolute;
+  top: 5px;
+  left: 0;
+  margin: 0;
   opacity: 0;
   pointer-events: none;
 }
