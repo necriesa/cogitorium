@@ -3,20 +3,11 @@ import { GOAL_PRESETS, getStats, hm, setGoal, type Stats } from "../lib/stats";
 import { onApp } from "../lib/events";
 import { remainingMs, useSharedTimer } from "../lib/timer";
 import type { Scroll } from "../lib/scroll";
+import { cachedOpenScroll, openScroll, restoreOpenScroll } from "../lib/scrollStore";
 
 type Props = { onOpen: (page: "data-stylus" | "chrono-siphon") => void };
 
-const ACTIVE_KEY = "auto-quill.active"; // same key the Data Stylus uses
 const WEEKDAY = ["S", "M", "T", "W", "T", "F", "S"];
-
-function readActive(): Scroll | null {
-  try {
-    const saved = localStorage.getItem(ACTIVE_KEY);
-    return saved ? (JSON.parse(saved) as Scroll) : null;
-  } catch {
-    return null;
-  }
-}
 
 /** Short goal label: 90 → "1½h", 120 → "2h", 45 → "45m". */
 function goalLabel(minutes: number): string {
@@ -74,7 +65,7 @@ function clock(ms: number): string {
 export default function Dashboard({ onOpen }: Props) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [error, setError] = useState("");
-  const [active, setActive] = useState<Scroll | null>(readActive);
+  const [active, setActive] = useState<Scroll | null>(cachedOpenScroll);
   const [editingGoal, setEditingGoal] = useState(false);
   const { timer, now } = useSharedTimer();
 
@@ -89,6 +80,8 @@ export default function Dashboard({ onOpen }: Props) {
 
   useEffect(() => {
     load();
+    // The open scroll as it is in the vault now (it may have been ticked in Obsidian).
+    restoreOpenScroll().then(setActive).catch(() => {});
     const offLog = onApp("log-changed", load);
     const offScroll = onApp<Scroll | null>("scroll-changed", (s) => {
       setActive(s ?? null);
@@ -121,6 +114,12 @@ export default function Dashboard({ onOpen }: Props) {
   function pickGoal(minutes: number) {
     setEditingGoal(false);
     setGoal(minutes).then(load).catch((e) => setError(String(e)));
+  }
+  /** Opens a scroll on the Data Stylus, to carry on with it. */
+  function resume(file: string) {
+    openScroll(file)
+      .then((opened) => (opened ? onOpen("data-stylus") : load()))
+      .catch((e) => setError(String(e)));
   }
   const stalled = stats.scrolls.filter((s) => s.status === "stalled");
   const activeDone = active?.items.filter((i) => i.done).length ?? 0;
@@ -274,12 +273,14 @@ export default function Dashboard({ onOpen }: Props) {
           <ul className="scroll-list">
             {stats.scrolls.slice(0, 6).map((s) => (
               <li key={s.file} className={`scroll-${s.status}`}>
-                <span className="scroll-title">{s.title}</span>
-                <span className="scroll-meta">
-                  {s.done}/{s.total}
-                  {s.status === "complete" ? " · complete" : s.idleDays != null ? ` · idle ${s.idleDays}d` : ""}
-                </span>
-                {s.status === "stalled" && s.nextItem && <span className="scroll-next">next: {s.nextItem}</span>}
+                <button className="scroll-row" onClick={() => resume(s.file)} title="Open on the Data Stylus">
+                  <span className="scroll-title">{s.title}</span>
+                  <span className="scroll-meta">
+                    {s.done}/{s.total}
+                    {s.status === "complete" ? " · complete" : s.idleDays != null ? ` · idle ${s.idleDays}d` : ""}
+                  </span>
+                  {s.status === "stalled" && s.nextItem && <span className="scroll-next">next: {s.nextItem}</span>}
+                </button>
               </li>
             ))}
           </ul>

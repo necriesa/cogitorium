@@ -127,7 +127,9 @@ export function toMarkdown(scroll: Scroll, now: Date = new Date()): string {
 
 /** Reads a scroll note back (e.g. after it was ticked in Obsidian). */
 export function fromMarkdown(markdown: string, file: string, created: string): Scroll {
-  const { title, items } = breakDown(markdown);
+  // A note written by hand without a heading is named by its file, as in Obsidian.
+  const hasHeading = stripFrontmatter(markdown).split(/\r?\n/).some((l) => HEADING.test(l.trim()));
+  const { title, items } = breakDown(markdown, hasHeading ? "" : file.replace(/\.md$/, ""));
   const createdMatch = markdown.match(/^created:\s*(.+)$/m);
   return { title, items, file, created: createdMatch?.[1].trim() ?? created };
 }

@@ -6,8 +6,8 @@ It is **one app** with three sections, and on the desktop any section can also b
 
 | Section | What it does |
 |---|---|
-| **Cogitator** (home) | Dashboard of your record, counted by the app from the vault logs: today's focus against your **daily goal**, streak, the last 7 days (with the goal line), where the time went by task and **by project**, the live timer, the open scroll, and stalled scrolls (idle 7+ days) with their next item. Set or turn off the goal with **Change goal**. For questions and weekly reviews there is also a `/cogitator` Claude skill in the vault, which uses `scripts/cogitator_stats.py`. |
-| **Data Stylus** ✎ | Paste a task. Prose is broken into subtasks (on sentences, semicolons, "then" and "after that"); bullet or checkbox lists are kept as they are, nesting included. Sealing writes a Markdown checklist to the vault. Ticks update that note, and ticks made in Obsidian come back when you focus the widget. |
+| **Cogitator** (home) | Dashboard of your record, counted by the app from the vault logs: today's focus against your **daily goal**, streak, the last 7 days (with the goal line), where the time went by task and **by project**, the live timer, the open scroll, and stalled scrolls (idle 7+ days) with their next item. Click a scroll to open it on the Data Stylus. Set or turn off the goal with **Change goal**. For questions and weekly reviews there is also a `/cogitator` Claude skill in the vault, which uses `scripts/cogitator_stats.py`. |
+| **Data Stylus** ✎ | Paste a task. Prose is broken into subtasks (on sentences, semicolons, "then" and "after that"); bullet or checkbox lists are kept as they are, nesting included. Sealing writes a Markdown checklist to the vault. Ticks update that note, and ticks made in Obsidian come back when you focus the widget. The open scroll reopens after a restart. **Archive** lists every scroll in the vault (progress, idle days, next item, with a search box), so you can pick up any earlier task; the empty slate also offers the latest unfinished ones under **Resume**. |
 | **Chrono-Siphon** ⧗ | A Pomodoro timer drawn as a gothic stasis hourglass: bronze frame, skull finial, winged-skull cap, crux pendant. Name the quarry, pick a **project** (any note in the vault's `Projects/` folder, or none), set the minutes, invoke stasis, and record the verdict when the sands run out. |
 
 Inspired by the desktop widgets in Tina Huang's [Learn 10X Faster In 10 Minutes](https://www.youtube.com/watch?v=sbmP6i-MChk).
@@ -39,7 +39,7 @@ The visual language follows Owlcat's *Warhammer 40,000: Rogue Trader* UI, and th
 [Tauri 2](https://v2.tauri.app/) with a React 19 + TypeScript + Vite frontend.
 
 - **Windows:** the `main` window is the full app. On the desktop, the **Pop out** button on a section opens it as a widget window (`data-stylus` or `chrono-siphon`). Every window loads the same page, and `src/main.tsx` picks what to show from the window's label.
-- **Settings:** `settings.json` holds the vault, the daily goal (`daily_goal`, minutes; default 120, 0 = off) and the popped-out widgets.
+- **Settings:** `settings.json` holds the vault, the daily goal (`daily_goal`, minutes; default 120, 0 = off) the popped-out widgets, and the open Data Stylus scroll (`open_scroll`, a file name in `Scrolls/`), so it reopens after a restart.
 - **Remembered pop-outs:** popped-out widgets are saved in `settings.json` and reopened on the next launch. Closing the main window quits the app and keeps that list. Closing a widget on its own forgets it.
 - **Shared state:** the Chrono-Siphon timer lives in the Rust backend, so the main app and a widget always show the same timer, and only one window tolls when it ends. The open Data Stylus scroll is shared through app events (`scroll-changed`), and the dashboard refreshes on `log-changed` and `goal-changed`.
 - **Phones:** narrow windows (under 640px) get a bottom tab bar instead of the sidebar, ready for a future mobile build. Pop-outs are desktop only.
@@ -76,7 +76,7 @@ On first run the app looks in Obsidian's own vault list (`%APPDATA%\obsidian\obs
 Everything goes under `<vault>/Sources/Journal/Widgets/`. Set `DARK_CELLS_LOG_DIR` to use a different folder.
 
 - **Daily log:** `<YYYY-MM-DD>.md`. Each action appends one line. The file is created with frontmatter the first time.
-- **Scrolls:** `Scrolls/<Task>.md`. Each Data Stylus task is one checklist note (frontmatter has `progress: 2/5`). Tick it in the widget or in Obsidian; both stay in step.
+- **Scrolls:** `Scrolls/<Task>.md`. Each Data Stylus task is one checklist note (frontmatter has `progress: 2/5`). Tick it in the widget or in Obsidian; both stay in step. A checklist note you write by hand in this folder shows up in the Archive too (named by its heading, or its file name if it has none). Ticking it in the app rewrites it in the scroll format, so keep notes there to a title and a checklist.
 
 ```markdown
 - 14:32 · Chrono-Siphon · 25 min · film demo

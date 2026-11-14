@@ -3,11 +3,38 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { logToVault, today } from "../lib/vaultLog";
 import { breakDown, fileNameFor, fromMarkdown, toMarkdown, type Scroll } from "../lib/scroll";
-import { listScrolls, loadScroll, saveScroll } from "../lib/scrollStore";
+import {
+  cachedOpenScroll,
+  listScrolls,
+  loadScroll,
+  openScroll,
+  rememberOpenScroll,
+  restoreOpenScroll,
+  saveScroll,
+  scrollLibrary,
+} from "../lib/scrollStore";
+import type { ScrollStat } from "../lib/stats";
 import { emitApp, onApp } from "../lib/events";
 
-// Storage keys keep the widget's pre-0.3 name (Auto Quill) so an open scroll survives the rename.
-const ACTIVE_KEY = "auto-quill.active";
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** Unfinished scrolls first (most recently touched first), then finished ones. */
+function libraryOrder(list: ScrollStat[]): ScrollStat[] {
+  const idle = (s: ScrollStat) => s.idleDays ?? Number.MAX_SAFE_INTEGER;
+  return [...list].sort(
+    (a, b) =>
+      Number(a.status === "complete") - Number(b.status === "complete") || idle(a) - idle(b) || a.title.localeCompare(b.title),
+  );
+}
+
+/** "02/05 · idle 3d", "04/04 · complete". */
+function scrollMeta(s: ScrollStat): string {
+  const when =
+    s.status === "complete" ? "complete" : s.idleDays == null ? "" : s.idleDays === 0 ? "today" : `idle ${s.idleDays}d`;
+  return [`${pad(s.done)}/${pad(s.total)}`, when].filter(Boolean).join(" · ");
+}
+
+const bare = (file: string) => file.replace(/\.md$/, "");
 
 /** A red wax purity seal, stuck on the slate's casing. */
 function WaxSeal() {
@@ -23,15 +50,6 @@ function WaxSeal() {
   );
 }
 
-function readActive(): Scroll | null {
-  try {
-    const saved = localStorage.getItem(ACTIVE_KEY);
-    return saved ? (JSON.parse(saved) as Scroll) : null;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Data Stylus, presented as a data slate: an iron handheld casing around a
  * green cogitator screen, with rune keys underneath. Paste a task (prose or
@@ -39,36 +57,45 @@ function readActive(): Scroll | null {
  * Markdown checklist in the vault.
  * Ticks here update the note; ticks made in Obsidian come back when the
  * window is focused. The open scroll is shared between the main app and a
- * popped-out widget through the "scroll-changed" event.
+ * popped-out widget through the "scroll-changed" event, and remembered in
+ * settings.json so it reopens after a restart. The Archive key lists every
+ * scroll in the vault (checklists written by hand in Obsidian too), so any
+ * earlier task can be picked up again.
  */
 export default function DataStylus() {
-  const [scroll, setScroll] = useState<Scroll | null>(readActive);
+  const [scroll, setScroll] = useState<Scroll | null>(cachedOpenScroll);
   const [taskName, setTaskName] = useState("");
   const [draft, setDraft] = useState("");
-  const [earlier, setEarlier] = useState<string[]>([]);
+  const [library, setLibrary] = useState<ScrollStat[]>([]);
+  const [browsing, setBrowsing] = useState(false);
+  const [seek, setSeek] = useState("");
+  const [showComplete, setShowComplete] = useState(false);
   const [status, setStatus] = useState("");
   const [writing, setWriting] = useState(false);
   const writeTimer = useRef(0);
 
   const preview = useMemo(() => (draft.trim() ? breakDown(draft, taskName) : null), [draft, taskName]);
 
-  // Remember which scroll is open (per-machine convenience; the vault note is the record).
+  // On launch, reopen the scroll that was open last time, re-read from the vault.
   useEffect(() => {
-    try {
-      if (scroll) localStorage.setItem(ACTIVE_KEY, JSON.stringify(scroll));
-      else localStorage.removeItem(ACTIVE_KEY);
-    } catch {
-      /* ignore */
-    }
-  }, [scroll]);
+    restoreOpenScroll()
+      .then((restored) => setScroll((prev) => (JSON.stringify(prev) === JSON.stringify(restored) ? prev : restored)))
+      .catch((err) => setStatus(`Could not reopen the scroll: ${String(err)}`));
+  }, []);
 
-  // Pull in ticks made in Obsidian: re-read the note on load and whenever the window gains focus.
+  // Pull in ticks made in Obsidian whenever the window gains focus.
   const refreshFromVault = useCallback(async () => {
-    const current = readActive();
+    const current = cachedOpenScroll();
     if (!current) return;
     try {
       const text = await loadScroll(current.file);
-      if (text == null) return;
+      if (text == null) {
+        // Deleted or renamed in Obsidian.
+        await rememberOpenScroll(null);
+        setScroll((prev) => (prev?.file === current.file ? null : prev));
+        setStatus(`Scroll gone from the vault: ${bare(current.file)}`);
+        return;
+      }
       const fresh = fromMarkdown(text, current.file, current.created);
       setScroll((prev) => (prev && prev.file === fresh.file && JSON.stringify(prev) !== JSON.stringify(fresh) ? fresh : prev));
     } catch (err) {
@@ -76,28 +103,41 @@ export default function DataStylus() {
     }
   }, []);
 
+  const loadLibrary = useCallback(() => {
+    scrollLibrary()
+      .then((list) => setLibrary(libraryOrder(list)))
+      .catch((err) => {
+        setLibrary([]);
+        setStatus(`Could not read the archive: ${String(err)}`);
+      });
+  }, []);
+
   useEffect(() => {
-    refreshFromVault();
     if (!isTauri()) return;
     const unlisten = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
-      if (focused) refreshFromVault();
+      if (!focused) return;
+      refreshFromVault();
+      loadLibrary();
     });
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [refreshFromVault]);
+  }, [refreshFromVault, loadLibrary]);
 
+  // The resume list (empty slate) and the archive both show the vault's scrolls.
+  const openFile = scroll?.file;
   useEffect(() => {
-    if (!scroll) listScrolls().then(setEarlier).catch(() => setEarlier([]));
-  }, [scroll]);
+    if (!openFile || browsing) loadLibrary();
+  }, [openFile, browsing, loadLibrary]);
 
   // Another window opened, changed or closed the scroll.
   useEffect(() => onApp<Scroll | null>("scroll-changed", (next) => setScroll(next ?? null)), []);
 
-  /** Shows `next` here and in every other window. */
+  /** Shows `next` here and in every other window, and remembers it for the next launch. */
   function show(next: Scroll | null) {
     setScroll(next);
     void emitApp("scroll-changed", next);
+    rememberOpenScroll(next).catch((err) => setStatus(`Could not remember the scroll: ${String(err)}`));
   }
 
   function scratch() {
@@ -137,123 +177,217 @@ export default function DataStylus() {
     await persist({ ...scroll, items }, item.done ? "reopened" : "completed", item.text, scroll.title);
   }
 
+  /** Opens an earlier scroll from the vault, to carry on with it. */
   async function unroll(file: string) {
-    const text = await loadScroll(file);
-    if (text != null) show(fromMarkdown(text, file, today()));
+    try {
+      const opened = await openScroll(file);
+      if (!opened) {
+        setStatus(`Scroll gone from the vault: ${bare(file)}`);
+        loadLibrary();
+        return;
+      }
+      setScroll(opened);
+      setBrowsing(false);
+      setSeek("");
+      setStatus(`Unrolled · Scrolls/${file}`);
+    } catch (err) {
+      setStatus(`Could not unroll the scroll: ${String(err)}`);
+    }
   }
 
   const done = scroll?.items.filter((i) => i.done).length ?? 0;
   const total = scroll?.items.length ?? 0;
   const complete = !!scroll && total > 0 && done === total;
-  const footer = writing ? "Inscribing" : status || (scroll ? "Scriptor ready" : "Awaiting dictation");
-  const pad = (n: number) => String(n).padStart(2, "0");
+  const footer =
+    writing ? "Inscribing" : status || (browsing ? "Select a scroll" : scroll ? "Scriptor ready" : "Awaiting dictation");
+
+  const unfinished = library.filter((s) => s.status !== "complete");
+  const finishedCount = library.length - unfinished.length;
+  const query = seek.trim().toLowerCase();
+  // A search looks through finished scrolls too.
+  const shown = library.filter(
+    (s) =>
+      (showComplete || !!query || s.status !== "complete") &&
+      (!query || s.title.toLowerCase().includes(query) || !!s.nextItem?.toLowerCase().includes(query)),
+  );
+
+  const headCount = browsing
+    ? `${pad(library.length)} scrolls`
+    : scroll
+      ? `${pad(done)}/${pad(total)}`
+      : preview
+        ? `${pad(preview.items.length)} parsed`
+        : "--";
 
   return (
     <main className="slate">
-        {/* casing top: speaker grille, activity lamp, maker's plate, purity seal */}
-        <div className="slate-top">
-          <span className="grille" aria-hidden="true" />
-          <span className={writing ? "lamp busy" : "lamp"} aria-hidden="true" />
-          <span className="slate-plate">Data-slate · Scriptorum</span>
-          <span className="casing-seal" aria-hidden="true">
-            <WaxSeal />
-          </span>
-        </div>
+      {/* casing top: speaker grille, activity lamp, maker's plate, purity seal */}
+      <div className="slate-top">
+        <span className="grille" aria-hidden="true" />
+        <span className={writing ? "lamp busy" : "lamp"} aria-hidden="true" />
+        <span className="slate-plate">Data-slate · Scriptorum</span>
+        <span className="casing-seal" aria-hidden="true">
+          <WaxSeal />
+        </span>
+      </div>
 
-        <section className="cogitator screen">
-          <header className="screen-head">
-            <span>{scroll ? "Scroll" : "Dictation"}</span>
-            <span>{scroll ? `${pad(done)}/${pad(total)}` : preview ? `${pad(preview.items.length)} parsed` : "--"}</span>
-          </header>
+      <section className="cogitator screen">
+        <header className="screen-head">
+          <span>{browsing ? "Archive" : scroll ? "Scroll" : "Dictation"}</span>
+          <span>{headCount}</span>
+        </header>
 
-          <div className="screen-body">
-            {!scroll ? (
-              <>
-                <label className="term-field">
-                  <span className="term-label">Designation</span>
-                  <input
-                    className="term-input"
-                    value={taskName}
-                    onChange={(e) => setTaskName(e.target.value)}
-                    placeholder="task name (optional)"
-                    aria-label="Task name"
-                  />
-                </label>
-                <label className="term-field">
-                  <span className="term-label">Dictate</span>
-                  <textarea
-                    className="term-input term-area"
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    placeholder={"> paste the task. prose is split into steps; bullet lists are kept."}
-                    aria-label="Task text"
-                  />
-                </label>
-                {preview && preview.items.length > 0 && (
-                  <div className="parsed">
-                    <p className="term-label">Parsed · {preview.title}</p>
-                    <ol>
-                      {preview.items.map((it, i) => (
-                        <li key={i} style={{ paddingLeft: it.depth * 16 }}>
-                          <span className="idx">{pad(i + 1)}</span>
-                          {it.text}
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
-                )}
-                {!preview && earlier.length > 0 && (
-                  <div className="archive">
-                    <p className="term-label">Archive</p>
-                    {earlier.slice(0, 6).map((f) => (
-                      <button key={f} className="archive-entry" onClick={() => unroll(f)}>
-                        {f.replace(/\.md$/, "")}
-                      </button>
+        <div className="screen-body">
+          {browsing ? (
+            <>
+              <label className="term-field">
+                <span className="term-label">Seek</span>
+                <input
+                  className="term-input"
+                  value={seek}
+                  onChange={(e) => setSeek(e.target.value)}
+                  placeholder="title or next rite"
+                  aria-label="Filter scrolls"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && shown.length === 1) unroll(shown[0].file);
+                    if (e.key === "Escape") setBrowsing(false);
+                  }}
+                />
+              </label>
+              {shown.length === 0 ? (
+                <p className="term-label">
+                  {library.length === 0 ? "No scrolls in the vault yet" : query ? "No scroll matches" : "Every scroll is complete"}
+                </p>
+              ) : (
+                <ul className="library" aria-label="Scrolls in the vault">
+                  {shown.map((s) => {
+                    const isOpen = s.file === scroll?.file;
+                    return (
+                      <li key={s.file}>
+                        <button
+                          className={`library-entry lib-${s.status}${isOpen ? " lib-open" : ""}`}
+                          onClick={() => unroll(s.file)}
+                          title={s.updated ? `Last changed ${s.updated}` : undefined}
+                          aria-current={isOpen ? "true" : undefined}
+                        >
+                          <span className="lib-title">{s.title}</span>
+                          <span className="lib-meta">
+                            {scrollMeta(s)}
+                            {isOpen && " · open"}
+                          </span>
+                          {s.status !== "complete" && s.nextItem && <span className="lib-next">next: {s.nextItem}</span>}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {finishedCount > 0 && !query && (
+                <button className="lib-toggle" aria-pressed={showComplete} onClick={() => setShowComplete((v) => !v)}>
+                  {showComplete ? "Hide" : "Show"} {finishedCount} complete
+                </button>
+              )}
+            </>
+          ) : !scroll ? (
+            <>
+              <label className="term-field">
+                <span className="term-label">Designation</span>
+                <input
+                  className="term-input"
+                  value={taskName}
+                  onChange={(e) => setTaskName(e.target.value)}
+                  placeholder="task name (optional)"
+                  aria-label="Task name"
+                />
+              </label>
+              <label className="term-field">
+                <span className="term-label">Dictate</span>
+                <textarea
+                  className="term-input term-area"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  placeholder={"> paste the task. prose is split into steps; bullet lists are kept."}
+                  aria-label="Task text"
+                />
+              </label>
+              {preview && preview.items.length > 0 && (
+                <div className="parsed">
+                  <p className="term-label">Parsed · {preview.title}</p>
+                  <ol>
+                    {preview.items.map((it, i) => (
+                      <li key={i} style={{ paddingLeft: it.depth * 16 }}>
+                        <span className="idx">{pad(i + 1)}</span>
+                        {it.text}
+                      </li>
                     ))}
-                  </div>
-                )}
-              </>
-            ) : (
-              <>
-                <h1 className="slate-title">{scroll.title}</h1>
-                <div className="meter" aria-hidden="true">
-                  <span style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
+                  </ol>
                 </div>
-                <ol className="rites">
-                  {scroll.items.map((item, i) => (
-                    <li key={i} className={item.done ? "done" : ""} style={{ paddingLeft: item.depth * 18 }}>
-                      <label>
-                        <input type="checkbox" checked={item.done} onChange={() => toggle(i)} />
-                        <span className="rite-box" aria-hidden="true" />
-                        <span className="rite-text">{item.text}</span>
-                      </label>
-                    </li>
+              )}
+              {!preview && unfinished.length > 0 && (
+                <div className="archive">
+                  <p className="term-label">Resume</p>
+                  {unfinished.slice(0, 4).map((s) => (
+                    <button key={s.file} className="archive-entry" onClick={() => unroll(s.file)}>
+                      {s.title}
+                      <span className="archive-meta"> · {scrollMeta(s)}</span>
+                    </button>
                   ))}
-                </ol>
-                {complete && <p className="complete">+++ Rites complete +++</p>}
-              </>
-            )}
-          </div>
-
-          <footer className={writing ? "screen-foot writing" : "screen-foot"}>
-            <span>+++</span>
-            <span className="foot-text">{footer}</span>
-            <span>+++</span>
-          </footer>
-        </section>
-
-        {/* rune keys */}
-        <div className="keys">
-          {!scroll ? (
-            <button className="key lit" onClick={seal} disabled={!preview || preview.items.length === 0}>
-              Seal
-            </button>
+                </div>
+              )}
+            </>
           ) : (
-            <button className="key" onClick={() => show(null)}>
-              New
-            </button>
+            <>
+              <h1 className="slate-title">{scroll.title}</h1>
+              <div className="meter" aria-hidden="true">
+                <span style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
+              </div>
+              <ol className="rites">
+                {scroll.items.map((item, i) => (
+                  <li key={i} className={item.done ? "done" : ""} style={{ paddingLeft: item.depth * 18 }}>
+                    <label>
+                      <input type="checkbox" checked={item.done} onChange={() => toggle(i)} />
+                      <span className="rite-box" aria-hidden="true" />
+                      <span className="rite-text">{item.text}</span>
+                    </label>
+                  </li>
+                ))}
+              </ol>
+              {complete && <p className="complete">+++ Rites complete +++</p>}
+            </>
           )}
         </div>
+
+        <footer className={writing ? "screen-foot writing" : "screen-foot"}>
+          <span>+++</span>
+          <span className="foot-text">{footer}</span>
+          <span>+++</span>
+        </footer>
+      </section>
+
+      {/* rune keys */}
+      <div className="keys">
+        {browsing ? (
+          <button className="key" onClick={() => setBrowsing(false)}>
+            Return
+          </button>
+        ) : (
+          <>
+            <button className="key" onClick={() => setBrowsing(true)} title="Every scroll in the vault">
+              Archive
+            </button>
+            {!scroll ? (
+              <button className="key lit" onClick={seal} disabled={!preview || preview.items.length === 0}>
+                Seal
+              </button>
+            ) : (
+              <button className="key" onClick={() => show(null)}>
+                New
+              </button>
+            )}
+          </>
+        )}
+      </div>
     </main>
   );
 }

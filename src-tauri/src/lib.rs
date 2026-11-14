@@ -41,11 +41,16 @@ struct Settings {
     /// Focus minutes per day the dashboard measures against; 0 turns the goal off.
     #[serde(default = "default_goal")]
     daily_goal: u32,
+    /// The Data Stylus scroll that was open (a file name in `Scrolls/`), so it
+    /// reopens after a restart. Kept here rather than in the webview's storage,
+    /// which can lose its last writes when the app quits.
+    #[serde(default)]
+    open_scroll: Option<String>,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { vault: None, open_widgets: Vec::new(), daily_goal: DEFAULT_GOAL_MINUTES }
+        Settings { vault: None, open_widgets: Vec::new(), daily_goal: DEFAULT_GOAL_MINUTES, open_scroll: None }
     }
 }
 
@@ -165,12 +170,18 @@ fn set_vault(app: AppHandle, state: State<AppState>, path: String) -> Result<Str
     if !path.is_dir() {
         return Err(format!("Not a folder: {}", path.display()));
     }
-    {
+    let closed_scroll = {
         let mut settings = settings_lock(&state)?;
+        // The open scroll belongs to the old vault.
+        let closed = settings.vault.as_ref() != Some(&path) && settings.open_scroll.take().is_some();
         settings.vault = Some(path.clone());
         save_settings(&state.settings_file, &settings)?;
-    }
+        closed
+    };
     let shown = path.display().to_string();
+    if closed_scroll {
+        let _ = app.emit("scroll-changed", Option::<()>::None);
+    }
     let _ = app.emit("vault-changed", &shown);
     Ok(shown)
 }
@@ -326,6 +337,36 @@ fn read_scroll(state: State<AppState>, file_name: String) -> Result<Option<Strin
 #[tauri::command]
 fn list_scrolls(state: State<AppState>) -> Result<Vec<String>, String> {
     list_scrolls_in(&vault_root(&state)?)
+}
+
+/// Every scroll in the vault with its progress, for the Data Stylus library.
+/// `today` is the user's local date (YYYY-MM-DD), for the idle days.
+#[tauri::command]
+fn scroll_library(state: State<AppState>, today: String) -> Result<Vec<ScrollStat>, String> {
+    let today = parse_day(&today).ok_or_else(|| format!("Bad date: {today}"))?;
+    Ok(read_scroll_stats(&log_dir(&vault_root(&state)?)?, today))
+}
+
+/// The scroll that was open last, if any.
+#[tauri::command]
+fn get_open_scroll(state: State<AppState>) -> Result<Option<String>, String> {
+    Ok(settings_lock(&state)?.open_scroll.clone())
+}
+
+/// Remembers which scroll is open (`None` when the slate is cleared).
+#[tauri::command]
+fn set_open_scroll(state: State<AppState>, file_name: Option<String>) -> Result<(), String> {
+    if let Some(name) = &file_name {
+        if !is_safe_note_name(name) {
+            return Err(format!("Bad scroll name: {name}"));
+        }
+    }
+    let mut settings = settings_lock(&state)?;
+    if settings.open_scroll == file_name {
+        return Ok(());
+    }
+    settings.open_scroll = file_name;
+    save_settings(&state.settings_file, &settings)
 }
 
 // =====================================================================
@@ -582,6 +623,9 @@ struct ScrollStat {
     /// complete | stalled | active
     status: &'static str,
     next_item: Option<String>,
+    /// When it was last changed: the note's `updated:` field, or the file date
+    /// for notes written by hand in Obsidian.
+    updated: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -705,50 +749,68 @@ fn read_day_totals(folder: &Path) -> (std::collections::HashMap<i64, DayTotals>,
     (days, sessions)
 }
 
+/// Progress of one scroll note. `file_day` is the file's modified date, used
+/// when the note has no `updated:` field (one written by hand in Obsidian).
+fn scroll_stat(file: String, text: &str, file_day: Option<i64>, today: i64) -> ScrollStat {
+    let title = text
+        .lines()
+        .find_map(|l| l.strip_prefix("# "))
+        .map(|t| t.trim().to_string())
+        .unwrap_or_else(|| file.trim_end_matches(".md").to_string());
+    let mut done = 0;
+    let mut total = 0;
+    let mut next_item = None;
+    for line in text.lines() {
+        let l = line.trim_start();
+        for (prefix, ticked) in [("- [x] ", true), ("- [X] ", true), ("- [ ] ", false)] {
+            if let Some(item) = l.strip_prefix(prefix) {
+                total += 1;
+                if ticked {
+                    done += 1;
+                } else if next_item.is_none() {
+                    next_item = Some(item.trim().to_string());
+                }
+            }
+        }
+    }
+    let stamped = text
+        .lines()
+        .find_map(|l| l.strip_prefix("updated:"))
+        .map(|v| v.trim().to_string())
+        .filter(|v| v.get(0..10).and_then(parse_day).is_some());
+    let updated_day = stamped.as_deref().and_then(|v| parse_day(&v[0..10])).or(file_day);
+    let updated = stamped.or_else(|| file_day.map(format_day));
+    let idle_days = updated_day.map(|d| (today - d).max(0));
+    let status = if total > 0 && done == total {
+        "complete"
+    } else if idle_days.is_some_and(|d| d >= STALLED_AFTER_DAYS) {
+        "stalled"
+    } else {
+        "active"
+    };
+    ScrollStat { title, file, done, total, idle_days, status, next_item, updated }
+}
+
 fn read_scroll_stats(folder: &Path, today: i64) -> Vec<ScrollStat> {
     let Ok(entries) = fs::read_dir(folder.join("Scrolls")) else {
         return Vec::new();
     };
     let mut out: Vec<ScrollStat> = entries
         .filter_map(Result::ok)
-        .filter(|e| e.file_name().to_string_lossy().ends_with(".md"))
         .filter_map(|e| {
             let file = e.file_name().to_string_lossy().into_owned();
-            let text = fs::read_to_string(e.path()).ok()?;
-            let title = text
-                .lines()
-                .find_map(|l| l.strip_prefix("# "))
-                .map(|t| t.trim().to_string())
-                .unwrap_or_else(|| file.trim_end_matches(".md").to_string());
-            let mut done = 0;
-            let mut total = 0;
-            let mut next_item = None;
-            for line in text.lines() {
-                let l = line.trim_start();
-                for (prefix, ticked) in [("- [x] ", true), ("- [X] ", true), ("- [ ] ", false)] {
-                    if let Some(item) = l.strip_prefix(prefix) {
-                        total += 1;
-                        if ticked {
-                            done += 1;
-                        } else if next_item.is_none() {
-                            next_item = Some(item.trim().to_string());
-                        }
-                    }
-                }
+            if !is_safe_note_name(&file) {
+                return None;
             }
-            let idle_days = text
-                .lines()
-                .find_map(|l| l.strip_prefix("updated:"))
-                .and_then(|v| parse_day(v.trim().get(0..10)?))
-                .map(|d| today - d);
-            let status = if total > 0 && done == total {
-                "complete"
-            } else if idle_days.is_some_and(|d| d >= STALLED_AFTER_DAYS) {
-                "stalled"
-            } else {
-                "active"
-            };
-            Some(ScrollStat { title, file, done, total, idle_days, status, next_item })
+            let text = fs::read_to_string(e.path()).ok()?;
+            // The file date in UTC days; close enough for notes that carry no date of their own.
+            let file_day = e
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| (d.as_secs() / 86_400) as i64);
+            Some(scroll_stat(file, &text, file_day, today))
         })
         .collect();
     // stalled first, then active, then complete; most recently touched first within each
@@ -885,6 +947,9 @@ pub fn run() {
             write_scroll,
             read_scroll,
             list_scrolls,
+            scroll_library,
+            get_open_scroll,
+            set_open_scroll,
             timer_get,
             timer_start,
             timer_pause,
@@ -1029,18 +1094,25 @@ mod tests {
     fn saving_the_vault_keeps_open_widgets() {
         let dir = temp_dir("keep");
         let file = dir.join("settings.json");
-        let settings = Settings { vault: None, open_widgets: vec!["chrono-siphon".into()], daily_goal: 90 };
+        let settings = Settings {
+            vault: None,
+            open_widgets: vec!["chrono-siphon".into()],
+            daily_goal: 90,
+            open_scroll: Some("UE5 HUD.md".into()),
+        };
         save_settings(&file, &settings).unwrap();
         save_vault(&file, &dir).unwrap();
         let back = load_settings(&file);
         assert_eq!(back.vault, Some(dir.clone()));
         assert_eq!(back.open_widgets, vec!["chrono-siphon".to_string()]);
         assert_eq!(back.daily_goal, 90);
-        // Older settings files without open_widgets or a goal still load, with the default goal.
+        assert_eq!(back.open_scroll.as_deref(), Some("UE5 HUD.md"), "the open scroll survives a restart");
+        // Older settings files without open_widgets, a goal or an open scroll still load, with the default goal.
         fs::write(&file, r#"{"vault": null}"#).unwrap();
         let old = load_settings(&file);
         assert!(old.open_widgets.is_empty());
         assert_eq!(old.daily_goal, DEFAULT_GOAL_MINUTES);
+        assert_eq!(old.open_scroll, None);
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1130,6 +1202,45 @@ mod tests {
         assert_eq!((s.today.minutes, s.streak), (0, 4));
         // A missed day breaks it.
         assert_eq!(compute_stats(&vault, "2026-11-14", 7, 60).unwrap().streak, 0);
+        fs::remove_dir_all(&vault).unwrap();
+    }
+
+    #[test]
+    fn scroll_library_reads_hand_written_notes() {
+        let today = parse_day("2026-11-14").unwrap();
+        // Written by the Data Stylus: the `updated:` field wins over the file date.
+        let slate = "---
+type: data-stylus-scroll
+created: 2026-11-01
+updated: 2026-11-10 09:30
+progress: 1/2
+---
+# UE5 HUD
+
+- [x] Mock it up
+  - [ ] Health bar
+";
+        let s = scroll_stat("UE5 HUD.md".into(), slate, Some(today), today);
+        assert_eq!((s.done, s.total, s.idle_days), (1, 2, Some(4)));
+        assert_eq!(s.updated.as_deref(), Some("2026-11-10 09:30"));
+        assert_eq!(s.next_item.as_deref(), Some("Health bar"));
+        // Written by hand in Obsidian: no frontmatter, so the title is the file name and the file date counts.
+        let by_hand = "- [ ] Pack
+- [ ] Book flights
+";
+        let s = scroll_stat("Trip.md".into(), by_hand, Some(today - 8), today);
+        assert_eq!(s.title, "Trip");
+        assert_eq!((s.idle_days, s.status), (Some(8), "stalled"));
+        assert_eq!(s.updated.as_deref(), Some("2026-11-06"));
+        // Only safe note names are listed, so every entry can be opened.
+        let vault = temp_dir("library");
+        let folder = log_dir(&vault).unwrap();
+        fs::create_dir_all(folder.join("Scrolls")).unwrap();
+        fs::write(folder.join("Scrolls").join("Trip.md"), by_hand).unwrap();
+        fs::write(folder.join("Scrolls").join(".hidden.md"), by_hand).unwrap();
+        fs::write(folder.join("Scrolls").join("notes.txt"), by_hand).unwrap();
+        let listed: Vec<String> = read_scroll_stats(&folder, today).into_iter().map(|s| s.file).collect();
+        assert_eq!(listed, vec!["Trip.md".to_string()]);
         fs::remove_dir_all(&vault).unwrap();
     }
 }

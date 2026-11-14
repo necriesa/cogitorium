@@ -10,6 +10,8 @@ export type ScrollStat = {
   idleDays: number | null;
   status: "complete" | "stalled" | "active";
   nextItem: string | null;
+  /** When it last changed: the note's `updated:` field, or its file date. */
+  updated: string | null;
 };
 export type Stats = {
   today: DayStat;
@@ -84,9 +86,9 @@ function demoStats(days: number): Stats {
     goalMinutes: goal,
     goalDaysMet: goal ? list.filter((d) => d.minutes >= goal).length : 0,
     scrolls: [
-      { title: "UE5 HUD prototype", file: "UE5 HUD prototype.md", done: 2, total: 4, idleDays: 9, status: "stalled", nextItem: "Build the health bar widget" },
-      { title: "Job apps week 46", file: "Job apps week 46.md", done: 1, total: 5, idleDays: 2, status: "active", nextItem: "Tailor the Riot cover letter" },
-      { title: "Sunday reset", file: "Sunday reset.md", done: 4, total: 4, idleDays: 0, status: "complete", nextItem: null },
+      { title: "UE5 HUD prototype", file: "UE5 HUD prototype.md", done: 2, total: 4, idleDays: 9, status: "stalled", nextItem: "Build the health bar widget", updated: "2026-11-05 21:10" },
+      { title: "Job apps week 46", file: "Job apps week 46.md", done: 1, total: 5, idleDays: 2, status: "active", nextItem: "Tailor the Riot cover letter", updated: "2026-11-12 18:40" },
+      { title: "Sunday reset", file: "Sunday reset.md", done: 4, total: 4, idleDays: 0, status: "complete", nextItem: null, updated: "2026-11-14 08:05" },
     ],
   };
 }
