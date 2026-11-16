@@ -35,18 +35,30 @@ function VisitStrip({ stats }: { stats: ForgeStats }) {
 }
 
 /** Bars for one weekly measure, with a hover readout (one series, so no legend). */
-function WeekBars({ stats, value, unit }: { stats: ForgeStats; value: (w: ForgeStats["weeks"][number]) => number; unit: string }) {
+function WeekBars({
+  stats,
+  value,
+  unit,
+  empty,
+}: {
+  stats: ForgeStats;
+  value: (w: ForgeStats["weeks"][number]) => number;
+  unit: string;
+  /** Shown instead of the chart when every week is zero. */
+  empty: string;
+}) {
   const [hover, setHover] = useState<number | null>(null);
   const values = stats.weeks.map(value);
+  // With nothing to draw, the bars would be bare hover areas that only flip through dates.
+  if (values.every((v) => v <= 0)) return <p className="dash-empty">{empty}</p>;
   const peak = Math.max(1, ...values);
   const shown = hover ?? values.length - 1;
+  const amount = (v: number) => `${unit === "kg" ? kg(v) : fmt(v)} ${unit}`;
   return (
     <>
       <p className="forge-readout">
-        <span>week of {short(stats.weeks[shown].start)}</span>
-        <span className="strong">
-          {unit === "kg" ? kg(values[shown]) : fmt(values[shown])} {unit}
-        </span>
+        <span>{shown === values.length - 1 ? "this week" : `week of ${short(stats.weeks[shown].start)}`}</span>
+        <span className="strong">{amount(values[shown])}</span>
       </p>
       <div className="forge-bars" onMouseLeave={() => setHover(null)}>
         {values.map((v, i) => (
@@ -55,12 +67,18 @@ function WeekBars({ stats, value, unit }: { stats: ForgeStats; value: (w: ForgeS
             className={i === shown ? "forge-bar-hit on" : "forge-bar-hit"}
             onMouseEnter={() => setHover(i)}
             onFocus={() => setHover(i)}
-            aria-label={`Week of ${short(stats.weeks[i].start)}: ${unit === "kg" ? kg(v) : fmt(v)} ${unit}`}
+            aria-label={`Week of ${short(stats.weeks[i].start)}: ${amount(v)}`}
           >
-            <span className="forge-bar" style={{ height: `${v > 0 ? Math.max(4, (v / peak) * 100) : 0}%` }} />
+            {/* A zero week is a flat stub on the baseline, so it reads as zero rather than missing. */}
+            <span className={v > 0 ? "forge-bar" : "forge-bar zero"} style={v > 0 ? { height: `${Math.max(4, (v / peak) * 100)}%` } : undefined} />
           </button>
         ))}
       </div>
+      <p className="forge-axis-row">
+        <span>{short(stats.weeks[0].start)}</span>
+        <span>peak {amount(Math.max(...values))}</span>
+        <span>this week</span>
+      </p>
     </>
   );
 }
@@ -209,13 +227,13 @@ export default function ForgeRecord({ stats, workouts, onOpenDay }: Props) {
 
       <section className="cogitator dash-card" aria-label="Volume per week">
         <p className="term-label">Volume per week</p>
-        <WeekBars stats={stats} value={(w) => w.volume} unit="kg" />
+        <WeekBars stats={stats} value={(w) => w.volume} unit="kg" empty="No weight lifted in the last 12 weeks. Ticked sets with a weight add up here." />
       </section>
 
       {hasCardio && (
         <section className="cogitator dash-card" aria-label="Cardio per week">
           <p className="term-label">Cardio per week</p>
-          <WeekBars stats={stats} value={(w) => w.cardioMinutes} unit="min" />
+          <WeekBars stats={stats} value={(w) => w.cardioMinutes} unit="min" empty="No cardio in the last 12 weeks." />
         </section>
       )}
 

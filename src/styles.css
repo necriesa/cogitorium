@@ -1905,6 +1905,20 @@ button.pop-out {
   background: var(--cog);
   box-shadow: 0 0 6px var(--cog-glow);
 }
+.forge-bar.zero {
+  height: 2px;
+  border-radius: 1px;
+  background: var(--cog-line);
+  box-shadow: none;
+}
+.forge-axis-row {
+  display: flex;
+  justify-content: space-between;
+  margin: -4px 0 0;
+  font-size: 14px;
+  color: var(--cog-dim);
+  text-shadow: none;
+}
 .forge-select select {
   width: 100%;
   font-size: 20px;
