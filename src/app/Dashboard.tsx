@@ -4,8 +4,11 @@ import { onApp } from "../lib/events";
 import { remainingMs, useSharedTimer } from "../lib/timer";
 import type { Scroll } from "../lib/scroll";
 import { cachedOpenScroll, openScroll, restoreOpenScroll } from "../lib/scrollStore";
+import { daysBetween, getForgeStats, type ForgeStats } from "../lib/forge";
+import { today } from "../lib/vaultLog";
+import type { WidgetLabel } from "../lib/widgets";
 
-type Props = { onOpen: (page: "data-stylus" | "chrono-siphon") => void };
+type Props = { onOpen: (page: WidgetLabel) => void };
 
 const WEEKDAY = ["S", "M", "T", "W", "T", "F", "S"];
 
@@ -67,6 +70,7 @@ export default function Dashboard({ onOpen }: Props) {
   const [error, setError] = useState("");
   const [active, setActive] = useState<Scroll | null>(cachedOpenScroll);
   const [editingGoal, setEditingGoal] = useState(false);
+  const [forge, setForge] = useState<ForgeStats | null>(null);
   const { timer, now } = useSharedTimer();
 
   const load = useCallback(() => {
@@ -76,6 +80,9 @@ export default function Dashboard({ onOpen }: Props) {
         setError("");
       })
       .catch((e) => setError(String(e)));
+    getForgeStats()
+      .then(setForge)
+      .catch(() => setForge(null));
   }, []);
 
   useEffect(() => {
@@ -89,12 +96,14 @@ export default function Dashboard({ onOpen }: Props) {
     });
     const offTimer = onApp("timer-changed", load);
     const offGoal = onApp("goal-changed", load);
+    const offForge = onApp("forge-changed", load);
     window.addEventListener("focus", load);
     return () => {
       offLog();
       offScroll();
       offTimer();
       offGoal();
+      offForge();
       window.removeEventListener("focus", load);
     };
   }, [load]);
@@ -239,6 +248,31 @@ export default function Dashboard({ onOpen }: Props) {
         )}
         <button className="dash-link" onClick={() => onOpen("chrono-siphon")}>
           Open the Chrono-Siphon
+        </button>
+      </section>
+
+      <section className="cogitator dash-card" aria-label="Flesh-Forge">
+        <p className="term-label">Flesh-Forge</p>
+        {!forge || forge.totalVisits === 0 ? (
+          <p className="dash-empty">No gym visits recorded yet.</p>
+        ) : (
+          <>
+            <p className="dash-line strong">
+              {forge.visitsThisWeek} {forge.visitsThisWeek === 1 ? "visit" : "visits"} this week
+            </p>
+            <p className="dash-line">
+              {forge.weekStreak} {forge.weekStreak === 1 ? "week" : "weeks"} in a row · last{" "}
+              {forge.lastVisit ? (daysBetween(forge.lastVisit, today()) === 0 ? "today" : `${daysBetween(forge.lastVisit, today())}d ago`) : "never"}
+            </p>
+            {forge.records[0] && (
+              <p className="dash-line">
+                latest best: {forge.records[0].exercise} {forge.records[0].weight} kg × {forge.records[0].reps}
+              </p>
+            )}
+          </>
+        )}
+        <button className="dash-link" onClick={() => onOpen("flesh-forge")}>
+          Open the Flesh-Forge
         </button>
       </section>
 

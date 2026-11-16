@@ -2,13 +2,14 @@
 
 A gothic sci-fi personal productivity app, themed on Warhammer 40,000, for tracking, managing and updating tasks. Every action is logged as Markdown in an Obsidian vault.
 
-It is **one app** with three sections, and on the desktop any section can also be **popped out as a small widget window**:
+It is **one app** with four sections, and on the desktop any section can also be **popped out as a small widget window**:
 
 | Section | What it does |
 |---|---|
 | **Cogitator** (home) | Dashboard of your record, counted by the app from the vault logs: today's focus against your **daily goal**, streak, the last 7 days (with the goal line), where the time went by task and **by project**, the live timer, the open scroll, and stalled scrolls (idle 7+ days) with their next item. Click a scroll to open it on the Data Stylus. Set or turn off the goal with **Change goal**. For questions and weekly reviews there is also a `/cogitator` Claude skill in the vault, which uses `scripts/cogitator_stats.py`. |
 | **Data Stylus** ✎ | Paste a task. Prose is broken into subtasks (on sentences, semicolons, "then" and "after that"); bullet or checkbox lists are kept as they are, nesting included. Sealing writes a Markdown checklist to the vault. Ticks update that note, and ticks made in Obsidian come back when you focus the widget. The open scroll reopens after a restart. **Archive** lists every scroll in the vault (progress, idle days, next item, with a search box), so you can pick up any earlier task; the empty slate also offers the latest unfinished ones under **Resume**. |
 | **Chrono-Siphon** ⧗ | A Pomodoro timer drawn as a gothic stasis hourglass: bronze frame, skull finial, winged-skull cap, crux pendant. Name the quarry, pick a **project** (any note in the vault's `Projects/` folder, or none), set the minutes, invoke stasis, and record the verdict when the sands run out. |
+| **Flesh-Forge** (dumbbell) | A workout tracker. The **Planner** picks a day (today, or ahead to plan), starts a workout blank, from a template, or with **Repeat last** (copies the last workout with that name, weights included), and takes exercises as sets (kg × reps; an empty weight is bodyweight) or cardio (minutes, km, pace). Each exercise shows what you did last time, **+ Set** copies the previous set, and every change is saved to the workout's note. **Begin** and **Finish** time the session and log it. The **Record** shows visits this week, the week streak, 12 weeks of gym days, volume and cardio per week, each exercise's progression (top set or estimated 1RM), and personal bests. |
 
 Inspired by the desktop widgets in Tina Huang's [Learn 10X Faster In 10 Minutes](https://www.youtube.com/watch?v=sbmP6i-MChk).
 
@@ -38,7 +39,7 @@ The visual language follows Owlcat's *Warhammer 40,000: Rogue Trader* UI, and th
 
 [Tauri 2](https://v2.tauri.app/) with a React 19 + TypeScript + Vite frontend.
 
-- **Windows:** the `main` window is the full app. On the desktop, the **Pop out** button on a section opens it as a widget window (`data-stylus` or `chrono-siphon`). Every window loads the same page, and `src/main.tsx` picks what to show from the window's label.
+- **Windows:** the `main` window is the full app. On the desktop, the **Pop out** button on a section opens it as a widget window (`data-stylus`, `chrono-siphon` or `flesh-forge`). Every window loads the same page, and `src/main.tsx` picks what to show from the window's label.
 - **Settings:** `settings.json` holds the vault, the daily goal (`daily_goal`, minutes; default 120, 0 = off) the popped-out widgets, and the open Data Stylus scroll (`open_scroll`, a file name in `Scrolls/`), so it reopens after a restart.
 - **Remembered pop-outs:** popped-out widgets are saved in `settings.json` and reopened on the next launch. Closing the main window quits the app and keeps that list. Closing a widget on its own forgets it.
 - **Shared state:** the Chrono-Siphon timer lives in the Rust backend, so the main app and a widget always show the same timer, and only one window tolls when it ends. The open Data Stylus scroll is shared through app events (`scroll-changed`), and the dashboard refreshes on `log-changed` and `goal-changed`.
@@ -67,7 +68,7 @@ On first run the app looks in Obsidian's own vault list (`%APPDATA%\obsidian\obs
 | Command | What it does |
 |---|---|
 | `npm run tauri dev` | Runs the desktop app with hot reload. The first run compiles the Rust crates, which takes a few minutes. |
-| `npm run dev` | Runs only the frontend in a browser at http://localhost:1420. It shows the main app with sample dashboard numbers; add `?widget=data-stylus` or `?widget=chrono-siphon` to preview a widget window. Logs go to the browser console instead of the vault. |
+| `npm run dev` | Runs only the frontend in a browser at http://localhost:1420. It shows the main app with sample dashboard numbers; add `?widget=data-stylus`, `?widget=chrono-siphon` or `?widget=flesh-forge` to preview a widget window. The Flesh-Forge starts with sample workouts kept in the browser's storage. Logs go to the browser console instead of the vault. |
 | `npm run tauri build` | Builds the release app (`src-tauri/target/release/cogitorium.exe`) and installers (`src-tauri/target/release/bundle/msi/` and `bundle/nsis/`). |
 | `cd src-tauri && cargo test` | Runs the Rust unit tests. |
 
@@ -77,6 +78,7 @@ Everything goes under `<vault>/Sources/Journal/Cogitorium/`. Set `DARK_CELLS_LOG
 
 - **Daily log:** `<YYYY-MM-DD>.md`. Each action appends one line. The file is created with frontmatter the first time.
 - **Scrolls:** `Scrolls/<Task>.md`. Each Data Stylus task is one checklist note (frontmatter has `progress: 2/5`). Tick it in the widget or in Obsidian; both stay in step. A checklist note you write by hand in this folder shows up in the Archive too (named by its heading, or its file name if it has none). Ticking it in the app rewrites it in the scroll format, so keep notes there to a title and a checklist.
+- **Workouts:** `Flesh-Forge/<YYYY-MM-DD> <Name>.md`, one note per workout, and `Flesh-Forge/Templates/<Name>.md`. Frontmatter holds the date, name, status (`planned`, `active`, `done`) and times; each `## Exercise` heading is followed by its sets as checkboxes (`- [x] 60 kg × 8`, `- [ ] bodyweight × 12`, `- [x] 20 min · 3 km`) and an optional `Notes:` line, and a cardio exercise's heading ends in `· cardio`. You can tick sets in Obsidian too. A workout counts as a gym visit once it is finished or has a ticked set. The format is read and written by `src-tauri/src/forge.rs`.
 
 ```markdown
 - 14:32 · Chrono-Siphon · 25 min · film demo

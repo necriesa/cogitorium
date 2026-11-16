@@ -95,3 +95,10 @@ export const HourglassIcon = (p: IconProps) => (
     <path d="M3.5 2h9M3.5 14h9M5 2c0 3 3 4 3 6s-3 3-3 6M11 2c0 3-3 4-3 6s3 3 3 6" />
   </Svg>
 );
+
+/** Flesh-Forge: a dumbbell. */
+export const ForgeIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 8h8M4 4.5v7M2 6.5v3M12 4.5v7M14 6.5v3" />
+  </Svg>
+);

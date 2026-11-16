@@ -5,7 +5,8 @@
   "windows": [
     "main",
     "data-stylus",
-    "chrono-siphon"
+    "chrono-siphon",
+    "flesh-forge"
   ],
   "permissions": [
     "core:default",

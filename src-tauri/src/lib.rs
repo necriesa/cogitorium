@@ -19,6 +19,8 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+mod forge;
+
 /// Folder inside the vault where widget logs land, unless `DARK_CELLS_LOG_DIR` overrides it.
 const DEFAULT_LOG_DIR: &str = "Sources/Journal/Cogitorium";
 /// Where logs landed before v0.8. Moved to `DEFAULT_LOG_DIR` the first time it is needed.
@@ -520,9 +522,10 @@ fn timer_finish(app: AppHandle, state: State<AppState>) -> Result<bool, String> 
 // =====================================================================
 
 /// The widgets that can be popped out of the main window: label, title, size, resizable.
-const WIDGETS: [(&str, &str, f64, f64, bool); 2] = [
+const WIDGETS: [(&str, &str, f64, f64, bool); 3] = [
     ("data-stylus", "Data Stylus", 380.0, 620.0, true),
     ("chrono-siphon", "Chrono-Siphon", 300.0, 660.0, false),
+    ("flesh-forge", "Flesh-Forge", 440.0, 720.0, true),
 ];
 
 fn is_widget(label: &str) -> bool {
@@ -976,7 +979,14 @@ pub fn run() {
             is_desktop,
             cogitator_stats,
             set_goal,
-            list_projects
+            list_projects,
+            forge::forge_list,
+            forge::forge_save,
+            forge::forge_delete,
+            forge::forge_templates,
+            forge::forge_save_template,
+            forge::forge_delete_template,
+            forge::forge_stats
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

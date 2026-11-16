@@ -9,9 +9,17 @@ import { emit, listen } from "@tauri-apps/api/event";
  * - widgets-changed: a widget was popped out or closed (payload: open labels)
  * - goal-changed: the daily focus goal was set (payload: minutes)
  * - vault-changed: a different vault folder was chosen (payload: its path)
+ * - forge-changed: a Flesh-Forge workout or template was saved or deleted
  * In a plain browser (`npm run dev`) they stay inside the page.
  */
-export type AppEvent = "timer-changed" | "scroll-changed" | "log-changed" | "widgets-changed" | "goal-changed" | "vault-changed";
+export type AppEvent =
+  | "timer-changed"
+  | "scroll-changed"
+  | "log-changed"
+  | "widgets-changed"
+  | "goal-changed"
+  | "vault-changed"
+  | "forge-changed";
 
 const local = new EventTarget();
 
