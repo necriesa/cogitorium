@@ -73,7 +73,7 @@ On first run the app looks in Obsidian's own vault list (`%APPDATA%\obsidian\obs
 
 ## What lands in the vault
 
-Everything goes under `<vault>/Sources/Journal/Widgets/`. Set `DARK_CELLS_LOG_DIR` to use a different folder.
+Everything goes under `<vault>/Sources/Journal/Cogitorium/`. Set `DARK_CELLS_LOG_DIR` to use a different folder. Before v0.8 the folder was `Sources/Journal/Widgets/`; if a vault has only the old folder, the app renames it the first time it needs it.
 
 - **Daily log:** `<YYYY-MM-DD>.md`. Each action appends one line. The file is created with frontmatter the first time.
 - **Scrolls:** `Scrolls/<Task>.md`. Each Data Stylus task is one checklist note (frontmatter has `progress: 2/5`). Tick it in the widget or in Obsidian; both stay in step. A checklist note you write by hand in this folder shows up in the Archive too (named by its heading, or its file name if it has none). Ticking it in the app rewrites it in the scroll format, so keep notes there to a title and a checklist.

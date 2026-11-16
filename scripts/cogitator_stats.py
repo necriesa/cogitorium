@@ -1,6 +1,6 @@
 """Cogitator stats: counts what the Cogitorium widgets logged into the vault.
 
-Reads, inside the vault's widget folder (default `Sources/Journal/Widgets`):
+Reads, inside the vault's widget folder (default `Sources/Journal/Cogitorium`):
   - daily logs `<YYYY-MM-DD>.md`, one line per action:
         - 14:32 · Chrono-Siphon · 25 min · film demo
         - 14:32 · Chrono-Siphon · 25 min · film demo · [[Cogitorium]]   (project tag, v0.6+)
@@ -39,7 +39,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-DEFAULT_LOG_DIR = "Sources/Journal/Widgets"
+DEFAULT_LOG_DIR = "Sources/Journal/Cogitorium"
+LEGACY_LOG_DIR = "Sources/Journal/Widgets"  # before v0.8; the app moves it on first use
 SEP = " · "
 LINE = re.compile(r"^- (\d{1,2}):(\d{2}) · (.+)$")
 DATE_FILE = re.compile(r"^(\d{4}-\d{2}-\d{2})\.md$")
@@ -86,8 +87,11 @@ def settings_goal() -> int:
 
 
 def widget_dir(vault: Path) -> Path:
-    rel = os.environ.get("DARK_CELLS_LOG_DIR", DEFAULT_LOG_DIR)
-    return vault / rel
+    rel = os.environ.get("DARK_CELLS_LOG_DIR")
+    if rel:
+        return vault / rel
+    new, legacy = vault / DEFAULT_LOG_DIR, vault / LEGACY_LOG_DIR
+    return legacy if not new.exists() and legacy.is_dir() else new
 
 
 # ---------------------------------------------------------------- parsing

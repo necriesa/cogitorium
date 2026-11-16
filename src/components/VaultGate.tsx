@@ -41,7 +41,7 @@ export default function VaultGate({ title, icon, children }: Props) {
           <p className="gate-head">No vault bound</p>
           <p className="gate-text">
             Couldn't tell which Obsidian vault to use. Choose the one the widgets write to; logs and scrolls go in{" "}
-            <span className="gate-path">Sources/Journal/Widgets</span> inside it.
+            <span className="gate-path">Sources/Journal/Cogitorium</span> inside it.
           </p>
         </section>
         <div className="actions">

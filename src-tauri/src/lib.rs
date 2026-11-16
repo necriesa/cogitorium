@@ -20,7 +20,9 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 /// Folder inside the vault where widget logs land, unless `DARK_CELLS_LOG_DIR` overrides it.
-const DEFAULT_LOG_DIR: &str = "Sources/Journal/Widgets";
+const DEFAULT_LOG_DIR: &str = "Sources/Journal/Cogitorium";
+/// Where logs landed before v0.8. Moved to `DEFAULT_LOG_DIR` the first time it is needed.
+const LEGACY_LOG_DIR: &str = "Sources/Journal/Widgets";
 
 /// Daily focus goal until one is chosen on the dashboard.
 const DEFAULT_GOAL_MINUTES: u32 = 120;
@@ -221,12 +223,25 @@ fn list_projects(state: State<AppState>) -> Result<Vec<String>, String> {
 
 /// The log folder inside `vault`, which must stay inside it.
 fn log_dir(vault: &Path) -> Result<PathBuf, String> {
-    let rel = std::env::var("DARK_CELLS_LOG_DIR").unwrap_or_else(|_| DEFAULT_LOG_DIR.into());
+    let Ok(rel) = std::env::var("DARK_CELLS_LOG_DIR") else {
+        return Ok(default_log_dir(vault));
+    };
     let rel = Path::new(&rel);
     if rel.is_absolute() || rel.components().any(|c| matches!(c, Component::ParentDir)) {
         return Err("DARK_CELLS_LOG_DIR must be a relative path inside the vault".into());
     }
     Ok(vault.join(rel))
+}
+
+/// The default log folder. A vault that still has only the pre-v0.8 `Widgets` folder has it
+/// renamed; if the rename fails (say, a file is open elsewhere), the old folder keeps being used.
+fn default_log_dir(vault: &Path) -> PathBuf {
+    let dir = vault.join(DEFAULT_LOG_DIR);
+    let legacy = vault.join(LEGACY_LOG_DIR);
+    if !dir.exists() && legacy.is_dir() && fs::rename(&legacy, &dir).is_err() {
+        return legacy;
+    }
+    dir
 }
 
 /// A date in `YYYY-MM-DD` form, so it is safe to use as a file name.
@@ -995,6 +1010,24 @@ mod tests {
     }
 
     #[test]
+    fn moves_the_pre_v08_widgets_folder() {
+        let vault = temp_dir("legacy");
+        fs::create_dir_all(vault.join(LEGACY_LOG_DIR).join("Scrolls")).unwrap();
+        fs::write(vault.join(LEGACY_LOG_DIR).join("2026-11-14.md"), "- 09:00 · Chrono-Siphon · 25 min · old").unwrap();
+
+        let dir = default_log_dir(&vault);
+        assert_eq!(dir, vault.join(DEFAULT_LOG_DIR));
+        assert!(dir.join("2026-11-14.md").exists() && dir.join("Scrolls").is_dir());
+        assert!(!vault.join(LEGACY_LOG_DIR).exists());
+
+        // Once the new folder exists, a stray old one is left alone.
+        fs::create_dir_all(vault.join(LEGACY_LOG_DIR)).unwrap();
+        assert_eq!(default_log_dir(&vault), vault.join(DEFAULT_LOG_DIR));
+        assert!(vault.join(LEGACY_LOG_DIR).exists());
+        fs::remove_dir_all(&vault).unwrap();
+    }
+
+    #[test]
     fn appends_to_daily_log_inside_vault() {
         let vault = temp_dir("log");
         let path = append_log_in(&vault, "2026-11-12", "- 14:32 · Chrono-Siphon · 25 min · test").unwrap();
@@ -1002,7 +1035,7 @@ mod tests {
 
         let text = fs::read_to_string(&path).unwrap();
         assert!(path.ends_with("2026-11-12.md"));
-        assert!(path.contains("Widgets"));
+        assert!(path.contains("Cogitorium"));
         assert_eq!(text.matches("type: widget-log").count(), 1, "frontmatter written once");
         assert!(text.contains("Chrono-Siphon · 25 min") && text.contains("Data Stylus · completed"));
         assert!(append_log_in(&vault, "../escape", "x").is_err());
