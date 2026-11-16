@@ -6,7 +6,8 @@
     "main",
     "data-stylus",
     "chrono-siphon",
-    "flesh-forge"
+    "flesh-forge",
+    "tithe-ledger"
   ],
   "permissions": [
     "core:default",

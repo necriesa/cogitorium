@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 mod forge;
+mod ledger;
 
 /// Folder inside the vault where widget logs land, unless `DARK_CELLS_LOG_DIR` overrides it.
 const DEFAULT_LOG_DIR: &str = "Sources/Journal/Cogitorium";
@@ -522,10 +523,11 @@ fn timer_finish(app: AppHandle, state: State<AppState>) -> Result<bool, String> 
 // =====================================================================
 
 /// The widgets that can be popped out of the main window: label, title, size, resizable.
-const WIDGETS: [(&str, &str, f64, f64, bool); 3] = [
+const WIDGETS: [(&str, &str, f64, f64, bool); 4] = [
     ("data-stylus", "Data Stylus", 380.0, 620.0, true),
     ("chrono-siphon", "Chrono-Siphon", 300.0, 660.0, false),
     ("flesh-forge", "Flesh-Forge", 440.0, 720.0, true),
+    ("tithe-ledger", "Tithe-Ledger", 420.0, 700.0, true),
 ];
 
 fn is_widget(label: &str) -> bool {
@@ -990,7 +992,18 @@ pub fn run() {
             forge::forge_save_library,
             forge::forge_bodyweight,
             forge::forge_set_bodyweight,
-            forge::forge_stats
+            forge::forge_stats,
+            ledger::ledger_entries,
+            ledger::ledger_add,
+            ledger::ledger_update,
+            ledger::ledger_delete,
+            ledger::ledger_categories,
+            ledger::ledger_save_categories,
+            ledger::ledger_bills,
+            ledger::ledger_save_bills,
+            ledger::ledger_settle_bill,
+            ledger::ledger_import,
+            ledger::ledger_read_csv
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

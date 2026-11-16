@@ -96,6 +96,14 @@ export const HourglassIcon = (p: IconProps) => (
   </Svg>
 );
 
+/** Tithe-Ledger: a bound ledger with ruled lines. */
+export const LedgerIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3.5 2.5h8a1 1 0 0 1 1 1v10h-8a1 1 0 0 1-1-1Z" />
+    <path d="M5.5 2.5v11M7.5 5.5h3M7.5 8h3M7.5 10.5h2" />
+  </Svg>
+);
+
 /** Flesh-Forge: a dumbbell. */
 export const ForgeIcon = (p: IconProps) => (
   <Svg {...p}>

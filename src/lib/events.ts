@@ -10,6 +10,7 @@ import { emit, listen } from "@tauri-apps/api/event";
  * - goal-changed: the daily focus goal was set (payload: minutes)
  * - vault-changed: a different vault folder was chosen (payload: its path)
  * - forge-changed: a Flesh-Forge workout or template was saved or deleted
+ * - ledger-changed: a Tithe-Ledger entry, budget or bill was saved or deleted
  * In a plain browser (`npm run dev`) they stay inside the page.
  */
 export type AppEvent =
@@ -19,7 +20,8 @@ export type AppEvent =
   | "widgets-changed"
   | "goal-changed"
   | "vault-changed"
-  | "forge-changed";
+  | "forge-changed"
+  | "ledger-changed";
 
 const local = new EventTarget();
 

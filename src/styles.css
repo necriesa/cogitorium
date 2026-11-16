@@ -2119,6 +2119,372 @@ button.pop-out {
   color: var(--bronze-300);
 }
 
+/* ============================================== Tithe-Ledger (budget) */
+.ledger-tabs .forge-tab {
+  min-width: 0;
+  padding: 0 14px;
+}
+.ledger-kpis {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: space-around;
+  gap: 10px 16px;
+}
+.ledger-kpi {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.ledger-kpi .term-label {
+  margin: 0;
+}
+.ledger-kpi-value {
+  font-size: 32px;
+  line-height: 1;
+}
+.ledger-kpi .kpi-sub {
+  font-size: 15px;
+}
+.ledger-over {
+  color: var(--alarm);
+  text-shadow: none;
+}
+.ledger-kpi-value.ledger-over {
+  text-shadow: 0 0 6px rgba(229, 72, 60, 0.35);
+}
+.ledger-dim {
+  color: var(--cog-dim);
+  text-shadow: none;
+}
+.ledger-note-line {
+  display: block;
+  font-size: 15px;
+  color: var(--cog-dim);
+  text-shadow: none;
+}
+.ledger-note-line.ledger-over {
+  color: var(--alarm);
+}
+/* forms */
+.ledger-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ledger-form-row {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.ledger-amount {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  width: 112px;
+  flex-shrink: 0;
+}
+.ledger-amount .forge-num {
+  width: 100%;
+  text-align: left;
+  font-size: 22px;
+}
+.ledger-category {
+  flex: 1;
+  min-width: 140px;
+  width: auto;
+  background: var(--cog-bg);
+}
+.ledger-category option {
+  background: var(--iron-800);
+  color: var(--bone);
+}
+.ledger-note {
+  flex: 1;
+  min-width: 150px;
+  width: auto;
+}
+.ledger-date {
+  width: 150px;
+  flex-shrink: 0;
+  color-scheme: dark;
+}
+.ledger-bad {
+  border-bottom-color: var(--alarm);
+}
+/* budget meters */
+.ledger-budgets,
+.ledger-bills,
+.ledger-cats,
+.ledger-entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ledger-budget {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(29, 58, 32, 0.6);
+}
+.ledger-budget:last-child {
+  border-bottom: 0;
+}
+.ledger-budget-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.ledger-budget-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ledger-budget-amt {
+  flex-shrink: 0;
+}
+.ledger-meter {
+  position: relative;
+  height: 8px;
+  background: var(--cog-line);
+  border-radius: 2px;
+}
+.ledger-meter > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--cog);
+  box-shadow: 0 0 6px var(--cog-glow);
+}
+.ledger-meter > span.over {
+  background: var(--alarm);
+  box-shadow: none;
+}
+.ledger-pace {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--bone);
+  box-shadow: 0 0 0 1px var(--cog-bg);
+}
+/* bills */
+.ledger-bill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(29, 58, 32, 0.6);
+}
+.ledger-bill:last-child {
+  border-bottom: 0;
+}
+.ledger-bill-text {
+  flex: 1;
+  min-width: 0;
+}
+.ledger-link {
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  text-shadow: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.ledger-link:hover {
+  color: var(--bone);
+}
+.ledger-bill-keys {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.forge-shell .ledger-bill-keys .chip {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 16px;
+}
+.ledger-entry-text .forge-kind,
+.ledger-bill-text .forge-kind {
+  margin-left: 6px;
+}
+/* categories */
+.ledger-cat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(29, 58, 32, 0.6);
+}
+.ledger-cat:last-child {
+  border-bottom: 0;
+}
+.ledger-cat-name {
+  flex: 1;
+  min-width: 0;
+}
+.forge-shell .ledger-x {
+  min-width: 28px;
+  padding: 0 6px;
+  color: var(--cog-dim);
+}
+/* entries */
+.ledger-day + .ledger-day {
+  margin-top: 6px;
+}
+.ledger-day-head {
+  margin: 0 0 2px;
+  font-size: 15px;
+  text-transform: uppercase;
+  color: var(--cog-dim);
+  text-shadow: none;
+}
+.ledger-entry {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 4px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  text-shadow: inherit;
+  background: none;
+  border: 0;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.ledger-entry:hover,
+.ledger-entry.on {
+  background: rgba(159, 220, 110, 0.08);
+}
+.ledger-entry-text {
+  min-width: 0;
+}
+.ledger-entry-amt {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+/* bank import */
+.ledger-drop {
+  border: 1px dashed transparent;
+}
+.ledger-drop.over {
+  border-color: var(--cog);
+  background: rgba(159, 220, 110, 0.06);
+}
+.ledger-drop p {
+  margin: 0;
+}
+.ledger-file {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+.ledger-file input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.ledger-file:focus-within {
+  outline: 1px solid var(--cog);
+  outline-offset: 2px;
+}
+.ledger-steps {
+  margin: 0;
+  padding-left: 22px;
+}
+.ledger-steps li + li {
+  margin-top: 4px;
+}
+.ledger-import-file {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.ledger-import-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ledger-import-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(29, 58, 32, 0.6);
+}
+.ledger-import-row:last-child {
+  border-bottom: 0;
+}
+.ledger-import-row.off .ledger-import-head {
+  color: var(--cog-dim);
+  text-shadow: none;
+}
+.ledger-import-tick {
+  margin: 4px 0 0;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  accent-color: var(--cog);
+  cursor: pointer;
+}
+.ledger-import-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ledger-import-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+.ledger-import-note {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ledger-import-note .forge-kind {
+  margin-left: 6px;
+}
+.ledger-import-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 15px;
+}
+.forge-shell .ledger-import-cat {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 190px;
+  height: 26px;
+  padding: 0 4px;
+  font-size: 15px;
+}
+.ledger-import-cat.unsure {
+  border-bottom-color: var(--alarm);
+}
+.ledger-import-flag {
+  color: var(--alarm);
+  text-shadow: none;
+}
+.ledger-import-why {
+  color: var(--bone-dim);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

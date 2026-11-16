@@ -5,6 +5,7 @@ import { remainingMs, useSharedTimer } from "../lib/timer";
 import type { Scroll } from "../lib/scroll";
 import { cachedOpenScroll, openScroll, restoreOpenScroll } from "../lib/scrollStore";
 import { daysBetween, getForgeStats, type ForgeStats } from "../lib/forge";
+import { billsDue, dayLabel, getBills, getCategories, listEntries, money, monthOf, summarise, type Bill, type MonthSummary } from "../lib/ledger";
 import { today } from "../lib/vaultLog";
 import type { WidgetLabel } from "../lib/widgets";
 
@@ -71,6 +72,7 @@ export default function Dashboard({ onOpen }: Props) {
   const [active, setActive] = useState<Scroll | null>(cachedOpenScroll);
   const [editingGoal, setEditingGoal] = useState(false);
   const [forge, setForge] = useState<ForgeStats | null>(null);
+  const [ledger, setLedger] = useState<{ month: MonthSummary; due: Bill[] } | null>(null);
   const { timer, now } = useSharedTimer();
 
   const load = useCallback(() => {
@@ -83,6 +85,9 @@ export default function Dashboard({ onOpen }: Props) {
     getForgeStats()
       .then(setForge)
       .catch(() => setForge(null));
+    Promise.all([listEntries(), getCategories(), getBills()])
+      .then(([entries, categories, bills]) => setLedger({ month: summarise(entries, categories, monthOf(today())), due: billsDue(bills, 7) }))
+      .catch(() => setLedger(null));
   }, []);
 
   useEffect(() => {
@@ -97,6 +102,7 @@ export default function Dashboard({ onOpen }: Props) {
     const offTimer = onApp("timer-changed", load);
     const offGoal = onApp("goal-changed", load);
     const offForge = onApp("forge-changed", load);
+    const offLedger = onApp("ledger-changed", load);
     window.addEventListener("focus", load);
     return () => {
       offLog();
@@ -104,6 +110,7 @@ export default function Dashboard({ onOpen }: Props) {
       offTimer();
       offGoal();
       offForge();
+      offLedger();
       window.removeEventListener("focus", load);
     };
   }, [load]);
@@ -276,6 +283,37 @@ export default function Dashboard({ onOpen }: Props) {
         )}
         <button className="dash-link" onClick={() => onOpen("flesh-forge")}>
           Open the Flesh-Forge
+        </button>
+      </section>
+
+      <section className="cogitator dash-card" aria-label="Tithe-Ledger">
+        <p className="term-label">Tithe-Ledger</p>
+        {!ledger || (ledger.month.spent === 0 && ledger.month.income === 0) ? (
+          <p className="dash-empty">Nothing logged this month.</p>
+        ) : (
+          <>
+            <p className="dash-line strong">{money(ledger.month.spent, true)} spent this month</p>
+            {ledger.month.budget > 0 && (
+              <>
+                <div className="meter">
+                  <span style={{ width: `${Math.min(100, ((ledger.month.budget - ledger.month.left) / ledger.month.budget) * 100)}%` }} />
+                </div>
+                <p className="dash-line">
+                  budgeted {money(ledger.month.budget - ledger.month.left, true)} of {money(ledger.month.budget, true)} ·{" "}
+                  {ledger.month.left < 0 ? `${money(-ledger.month.left, true)} over` : `${money(ledger.month.left, true)} left`}
+                </p>
+              </>
+            )}
+          </>
+        )}
+        {ledger && ledger.due.length > 0 && (
+          <p className="dash-line">
+            {ledger.due[0].next < today() ? "overdue" : "next bill"}: {ledger.due[0].name} {money(ledger.due[0].cents)} · {dayLabel(ledger.due[0].next)}
+            {ledger.due.length > 1 && ` (+${ledger.due.length - 1} more this week)`}
+          </p>
+        )}
+        <button className="dash-link" onClick={() => onOpen("tithe-ledger")}>
+          Open the Tithe-Ledger
         </button>
       </section>
 

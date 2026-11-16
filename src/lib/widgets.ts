@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { onApp } from "./events";
 
-export type WidgetLabel = "data-stylus" | "chrono-siphon" | "flesh-forge";
+export type WidgetLabel = "data-stylus" | "chrono-siphon" | "flesh-forge" | "tithe-ledger";
 
 /** Pops a section out of the main window as its own widget window (desktop only). */
 export function openWidget(label: WidgetLabel): Promise<void> {

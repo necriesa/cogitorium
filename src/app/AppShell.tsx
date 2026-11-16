@@ -1,11 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import TitleBar from "../components/TitleBar";
 import { SigilDefs } from "../components/Sigils";
-import { CogitatorIcon, ForgeIcon, HourglassIcon, PopOutIcon, StylusIcon } from "../components/Icons";
+import { CogitatorIcon, ForgeIcon, HourglassIcon, LedgerIcon, PopOutIcon, StylusIcon } from "../components/Icons";
 import Dashboard from "./Dashboard";
 import DataStylus from "../widgets/DataStylus";
 import ChronoSiphon from "../widgets/ChronoSiphon";
 import FleshForge from "../forge/FleshForge";
+import TitheLedger from "../ledger/TitheLedger";
 import { openWidget, usePopOuts, type WidgetLabel } from "../lib/widgets";
 import { useSharedTimer } from "../lib/timer";
 
@@ -17,6 +18,7 @@ const PAGES: { id: Page; label: string; icon: ReactNode; hint: string }[] = [
   { id: "data-stylus", label: "Data Stylus", icon: <StylusIcon size={20} />, hint: "Tasks and subtasks" },
   { id: "chrono-siphon", label: "Chrono-Siphon", icon: <HourglassIcon size={20} />, hint: "Focus timer" },
   { id: "flesh-forge", label: "Flesh-Forge", icon: <ForgeIcon size={20} />, hint: "Workouts and gym record" },
+  { id: "tithe-ledger", label: "Tithe-Ledger", icon: <LedgerIcon size={20} />, hint: "Budget, spending and bills" },
 ];
 
 function readPage(): Page {
@@ -29,8 +31,8 @@ function readPage(): Page {
 }
 
 /**
- * The main Cogitorium window. One app with four sections: the Cogitator
- * dashboard (home), the Data Stylus, the Chrono-Siphon and the Flesh-Forge. On the desktop a
+ * The main Cogitorium window. One app with five sections: the Cogitator
+ * dashboard (home), the Data Stylus, the Chrono-Siphon, the Flesh-Forge and the Tithe-Ledger. On the desktop a
  * section can be popped out as its own widget window; both stay in sync.
  * Narrow windows (and phones) get a bottom tab bar instead of the sidebar.
  */
@@ -101,6 +103,8 @@ export default function AppShell() {
               <Dashboard onOpen={setPage} />
             ) : page === "flesh-forge" ? (
               <FleshForge />
+            ) : page === "tithe-ledger" ? (
+              <TitheLedger />
             ) : (
               <div className="column">{page === "data-stylus" ? <DataStylus /> : <ChronoSiphon />}</div>
             )}

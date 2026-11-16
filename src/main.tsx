@@ -6,9 +6,10 @@ import AppShell from "./app/AppShell";
 import DataStylus from "./widgets/DataStylus";
 import ChronoSiphon from "./widgets/ChronoSiphon";
 import FleshForge from "./forge/FleshForge";
+import TitheLedger from "./ledger/TitheLedger";
 import VaultGate from "./components/VaultGate";
 import WidgetFrame from "./components/WidgetFrame";
-import { CogitatorIcon, ForgeIcon, HourglassIcon, StylusIcon } from "./components/Icons";
+import { CogitatorIcon, ForgeIcon, HourglassIcon, LedgerIcon, StylusIcon } from "./components/Icons";
 // Fonts are bundled (no network needed). Four roles, see styles.css:
 // small-caps labels, readable body serif, cogitator readout, blackletter accent.
 import "@fontsource/cormorant-sc/600.css";
@@ -21,7 +22,7 @@ import "@fontsource/unifrakturcook/700.css";
 import "./styles.css";
 
 // Every window loads this same page and picks what to show from its label:
-// "main" is the full app; "data-stylus", "chrono-siphon" and "flesh-forge" are popped-out
+// "main" is the full app; "data-stylus", "chrono-siphon", "flesh-forge" and "tithe-ledger" are popped-out
 // widgets (created by the backend's open_widget command).
 // In a plain browser (`npm run dev`) use ?widget=data-stylus or
 // ?widget=chrono-siphon to preview a widget; otherwise you get the main app.
@@ -57,6 +58,17 @@ const views: Record<string, { title: string; icon: React.ReactNode; render: () =
       <WidgetFrame title="Flesh-Forge" icon={<ForgeIcon size={14} />}>
         <div className="widget-scroll">
           <FleshForge compact />
+        </div>
+      </WidgetFrame>
+    ),
+  },
+  "tithe-ledger": {
+    title: "Tithe-Ledger",
+    icon: <LedgerIcon size={14} />,
+    render: () => (
+      <WidgetFrame title="Tithe-Ledger" icon={<LedgerIcon size={14} />}>
+        <div className="widget-scroll">
+          <TitheLedger compact />
         </div>
       </WidgetFrame>
     ),
