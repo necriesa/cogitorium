@@ -271,6 +271,9 @@ export default function Dashboard({ onOpen }: Props) {
             )}
           </>
         )}
+        {forge && forge.bodyweight.length > 0 && (
+          <p className="dash-line">bodyweight {forge.bodyweight[forge.bodyweight.length - 1].kg} kg</p>
+        )}
         <button className="dash-link" onClick={() => onOpen("flesh-forge")}>
           Open the Flesh-Forge
         </button>

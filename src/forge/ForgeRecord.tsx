@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
-import { daysBetween, fmt, kg, setCount, volumeOf, type ExerciseStat, type ForgeStats, type Workout } from "../lib/forge";
+import { useMemo, useState, type ReactNode } from "react";
+import { daysBetween, fmt, kg, setCount, volumeOf, type ExerciseStat, type ForgeStats, type WeighIn, type Workout } from "../lib/forge";
+import WeighInField from "./WeighInField";
 import { today } from "../lib/vaultLog";
 
 type Props = { stats: ForgeStats; workouts: Workout[]; onOpenDay: (date: string) => void };
@@ -103,6 +104,91 @@ const METRICS: Record<ExerciseStat["kind"], Metric[]> = {
 };
 
 /** One exercise over time, as a line with a marker per session. */
+type ChartPoint = { date: string; v: number };
+
+/**
+ * One series over time: a line with a marker per point, a crosshair and a
+ * readout on hover (the latest point otherwise). One series, so no legend;
+ * the card's title names it.
+ */
+function LineChart({
+  points,
+  unit,
+  label,
+  detail,
+}: {
+  points: ChartPoint[];
+  unit: string;
+  label: string;
+  /** Extra line under the chart for the shown point. */
+  detail?: (i: number) => ReactNode;
+}) {
+  const [hover, setHover] = useState<number | null>(null);
+  const W = 320;
+  const H = 130;
+  const padX = 12;
+  const padTop = 14;
+  const padBottom = 18;
+  const values = points.map((p) => p.v);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  // A flat series sits in the middle of the chart.
+  const span = hi - lo || Math.max(1, hi * 0.1);
+  const base = hi === lo ? lo - span / 2 : lo;
+  const y = (v: number) => padTop + (1 - (v - base) / span) * (H - padTop - padBottom);
+  const x = (i: number) => (points.length === 1 ? W / 2 : padX + (i / (points.length - 1)) * (W - 2 * padX));
+  const shown = Math.min(hover ?? points.length - 1, points.length - 1);
+  const cur = points[shown];
+  const band = (W - 2 * padX) / Math.max(2, points.length);
+
+  return (
+    <>
+      <p className="forge-readout">
+        <span>{short(cur.date)}</span>
+        <span className="strong">
+          {fmt(cur.v)} {unit}
+        </span>
+      </p>
+      <svg
+        className="forge-line-chart"
+        viewBox={`0 0 ${W} ${H}`}
+        role="img"
+        aria-label={`${label}: ${fmt(points[0].v)} to ${fmt(points[points.length - 1].v)} ${unit}`}
+        onMouseLeave={() => setHover(null)}
+      >
+        <line className="forge-grid" x1={padX} x2={W - padX} y1={y(hi)} y2={y(hi)} />
+        <line className="forge-grid" x1={padX} x2={W - padX} y1={y(lo)} y2={y(lo)} />
+        <text className="forge-axis" x={padX} y={y(hi) - 4}>
+          {fmt(hi)}
+        </text>
+        {hi !== lo && (
+          <text className="forge-axis" x={padX} y={y(lo) + 12}>
+            {fmt(lo)}
+          </text>
+        )}
+        {points.length > 1 && <polyline className="forge-path" points={points.map((pt, i) => `${x(i)},${y(pt.v)}`).join(" ")} />}
+        {hover != null && <line className="forge-cross" x1={x(shown)} x2={x(shown)} y1={padTop - 6} y2={H - padBottom + 4} />}
+        {points.map((pt, i) => (
+          <g key={pt.date}>
+            <circle className={i === shown ? "forge-dot on" : "forge-dot"} cx={x(i)} cy={y(pt.v)} r={4} />
+            <rect className="forge-hit" x={x(i) - band / 2} y={0} width={band} height={H} onMouseEnter={() => setHover(i)} />
+          </g>
+        ))}
+        <text className="forge-axis" x={padX} y={H - 4}>
+          {short(points[0].date)}
+        </text>
+        {points.length > 1 && (
+          <text className="forge-axis" x={W - padX} y={H - 4} textAnchor="end">
+            {short(points[points.length - 1].date)}
+          </text>
+        )}
+      </svg>
+      {detail && <p className="forge-line">{detail(shown)}</p>}
+    </>
+  );
+}
+
+/** One exercise over time, by the measure picked for its kind. */
 function Progression({ exercise }: { exercise: ExerciseStat }) {
   const options = METRICS[exercise.kind] ?? METRICS.lift;
   const [metric, setMetric] = useState<Metric>(options[0]);
@@ -117,24 +203,7 @@ function Progression({ exercise }: { exercise: ExerciseStat }) {
       seconds: p.seconds || null,
       metres: p.metres || null,
     })[m];
-  const points = exercise.points.map((p) => ({ p, v: pick(p) })).filter((x): x is { p: typeof x.p; v: number } => x.v != null);
-  const [hover, setHover] = useState<number | null>(null);
-
-  const W = 320;
-  const H = 130;
-  const padX = 12;
-  const padTop = 14;
-  const padBottom = 18;
-  const values = points.map((x) => x.v);
-  const lo = Math.min(...values);
-  const hi = Math.max(...values);
-  // A flat series sits in the middle of the chart.
-  const span = hi - lo || Math.max(1, hi * 0.1);
-  const base = hi === lo ? lo - span / 2 : lo;
-  const y = (v: number) => padTop + (1 - (v - base) / span) * (H - padTop - padBottom);
-  const x = (i: number) => (points.length === 1 ? W / 2 : padX + (i / (points.length - 1)) * (W - 2 * padX));
-  const shown = hover ?? points.length - 1;
-  const cur = points[shown];
+  const sessions = exercise.points.filter((p) => pick(p) != null);
 
   return (
     <div className="forge-prog">
@@ -145,63 +214,46 @@ function Progression({ exercise }: { exercise: ExerciseStat }) {
           </button>
         ))}
       </div>
-      {points.length === 0 ? (
+      {sessions.length === 0 ? (
         <p className="dash-empty">Nothing recorded for this measure yet.</p>
       ) : (
-        <>
-          <p className="forge-readout">
-            <span>{short(cur.p.date)}</span>
-            <span className="strong">
-              {fmt(cur.v)} {METRIC_UNIT[m]}
-            </span>
-          </p>
-          <svg
-            className="forge-line-chart"
-            viewBox={`0 0 ${W} ${H}`}
-            role="img"
-            aria-label={`${exercise.name}, ${METRIC_LABEL[m]}: ${fmt(points[0].v)} to ${fmt(points[points.length - 1].v)} ${METRIC_UNIT[m]}`}
-            onMouseLeave={() => setHover(null)}
-          >
-            <line className="forge-grid" x1={padX} x2={W - padX} y1={y(hi)} y2={y(hi)} />
-            <line className="forge-grid" x1={padX} x2={W - padX} y1={y(lo)} y2={y(lo)} />
-            <text className="forge-axis" x={padX} y={y(hi) - 4}>
-              {fmt(hi)}
-            </text>
-            {hi !== lo && (
-              <text className="forge-axis" x={padX} y={y(lo) + 12}>
-                {fmt(lo)}
-              </text>
-            )}
-            {points.length > 1 && (
-              <polyline className="forge-path" points={points.map((pt, i) => `${x(i)},${y(pt.v)}`).join(" ")} />
-            )}
-            {hover != null && <line className="forge-cross" x1={x(shown)} x2={x(shown)} y1={padTop - 6} y2={H - padBottom + 4} />}
-            {points.map((pt, i) => (
-              <g key={pt.p.date}>
-                <circle className={i === shown ? "forge-dot on" : "forge-dot"} cx={x(i)} cy={y(pt.v)} r={4} />
-                <rect
-                  className="forge-hit"
-                  x={x(i) - (W - 2 * padX) / Math.max(2, points.length) / 2}
-                  y={0}
-                  width={(W - 2 * padX) / Math.max(2, points.length)}
-                  height={H}
-                  onMouseEnter={() => setHover(i)}
-                />
-              </g>
-            ))}
-            <text className="forge-axis" x={padX} y={H - 4}>
-              {short(points[0].p.date)}
-            </text>
-            {points.length > 1 && (
-              <text className="forge-axis" x={W - padX} y={H - 4} textAnchor="end">
-                {short(points[points.length - 1].p.date)}
-              </text>
-            )}
-          </svg>
-          <p className="forge-line">{cur.p.summary}</p>
-        </>
+        <LineChart
+          points={sessions.map((p) => ({ date: p.date, v: pick(p)! }))}
+          unit={METRIC_UNIT[m]}
+          label={`${exercise.name}, ${METRIC_LABEL[m]}`}
+          detail={(i) => (
+            <>
+              {sessions[i].summary}
+              {sessions[i].rpe != null && ` · avg RPE ${fmt(Math.round(sessions[i].rpe! * 10) / 10)}`}
+            </>
+          )}
+        />
       )}
     </div>
+  );
+}
+
+/** Weigh-ins over time, with today's box underneath. */
+function Bodyweight({ weighIns }: { weighIns: WeighIn[] }) {
+  const latest = weighIns[weighIns.length - 1] ?? null;
+  // Change over about four weeks: against the last weigh-in 28+ days before the latest.
+  const before = latest ? [...weighIns].reverse().find((w) => daysBetween(w.date, latest.date) >= 28) : undefined;
+  const change = latest && before ? latest.kg - before.kg : null;
+  return (
+    <>
+      {latest ? (
+        <>
+          <p className="forge-line">
+            latest {fmt(latest.kg)} kg · {short(latest.date)}
+            {change != null && ` · ${change > 0 ? "+" : change < 0 ? "−" : "±"}${fmt(Math.abs(Math.round(change * 10) / 10))} kg since ${short(before!.date)}`}
+          </p>
+          <LineChart points={weighIns.map((w) => ({ date: w.date, v: w.kg }))} unit="kg" label="Bodyweight" />
+        </>
+      ) : (
+        <p className="dash-empty">No weigh-ins yet. Log one below, or in a workout.</p>
+      )}
+      <WeighInField date={today()} weighIns={weighIns} label="Today" />
+    </>
   );
 }
 
@@ -285,6 +337,11 @@ export default function ForgeRecord({ stats, workouts, onOpenDay }: Props) {
             <Progression key={exercise.name} exercise={exercise} />
           </>
         )}
+      </section>
+
+      <section className="cogitator dash-card" aria-label="Bodyweight">
+        <p className="term-label">Bodyweight</p>
+        <Bodyweight weighIns={stats.bodyweight} />
       </section>
 
       <section className="cogitator dash-card" aria-label="Personal bests">

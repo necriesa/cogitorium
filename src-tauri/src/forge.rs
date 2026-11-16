@@ -58,6 +58,8 @@ pub struct Set {
     pub seconds: Option<f64>,
     /// Carry: distance in metres.
     pub metres: Option<f64>,
+    /// Rate of perceived exertion, 1-10 (halves allowed); written as "@ RPE 8".
+    pub rpe: Option<f64>,
 }
 
 /// Exercise kinds, by how a set is measured.
@@ -158,6 +160,31 @@ fn e1rm(weight: f64, reps: u32) -> f64 {
 /// - lift: `60 kg × 8`, `bodyweight × 12`, `bodyweight × max`
 fn parse_set(text: &str, done: bool) -> Option<Set> {
     let t = text.trim().to_lowercase().replace(['×', '*'], "x");
+    let (t, rpe) = split_rpe(&t);
+    let set = parse_set_body(t.trim(), done)?;
+    Some(Set { rpe, ..set })
+}
+
+/// Splits "60 kg x 8 @ rpe 8.5" into ("60 kg x 8", Some(8.5)). Also takes "@8" and "rpe 8".
+fn split_rpe(t: &str) -> (String, Option<f64>) {
+    let cut = t.find("@").or_else(|| t.find("rpe"));
+    let Some(at) = cut else {
+        return (t.to_string(), None);
+    };
+    let tail = t[at..].trim_start_matches('@').trim().trim_start_matches("rpe").trim();
+    let rpe = tail
+        .split_whitespace()
+        .next()
+        .and_then(parse_num)
+        .filter(|n| (1.0..=10.0).contains(n));
+    match rpe {
+        Some(r) => (t[..at].trim_end().to_string(), Some(r)),
+        None => (t.to_string(), None),
+    }
+}
+
+fn parse_set_body(t: &str, done: bool) -> Option<Set> {
+    let t = t.to_string();
     if t.is_empty() {
         return None;
     }
@@ -326,7 +353,8 @@ fn set_line(set: &Set, kind: &str) -> String {
             format!("{} × {reps}", kg.unwrap_or_else(|| "bodyweight".into()))
         }
     };
-    format!("- [{tick}] {text}")
+    let rpe = set.rpe.map(|r| format!(" @ RPE {}", num(r))).unwrap_or_default();
+    format!("- [{tick}] {text}{rpe}")
 }
 
 /// One line of text, for frontmatter and headings.
@@ -619,6 +647,87 @@ fn write_library(vault: &Path, entries: Vec<LibraryEntry>) -> Result<Vec<Library
     Ok(parse_library(&library_markdown(&clean)))
 }
 
+// ---------------------------------------------------------------- bodyweight
+
+/// The weigh-in log: one row per day, any day (not just gym days).
+const BODYWEIGHT_FILE: &str = "Bodyweight.md";
+const BODYWEIGHT_TYPE: &str = "flesh-forge-bodyweight";
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeighIn {
+    pub date: String,
+    pub kg: f64,
+}
+
+/// Reads weigh-ins from the log: any line with a date and a number after it
+/// (`| 2026-11-16 | 72.5 |`, `- 2026-11-16 · 72.5 kg`). One per day, the last
+/// line for a day wins; oldest first.
+pub fn parse_bodyweight(text: &str) -> Vec<WeighIn> {
+    let mut by_day: BTreeMap<String, f64> = BTreeMap::new();
+    for line in text.lines() {
+        let tokens: Vec<&str> = line
+            .split(|c: char| c.is_whitespace() || c == '|' || c == '·')
+            .filter(|t| !t.is_empty())
+            .collect();
+        let Some(i) = tokens.iter().position(|t| is_iso_date(t)) else { continue };
+        let kg = tokens[i + 1..]
+            .iter()
+            .find_map(|t| parse_num(t.trim_end_matches("kgs").trim_end_matches("kg")))
+            .filter(|n| (20.0..=400.0).contains(n));
+        if let Some(kg) = kg {
+            by_day.insert(tokens[i].to_string(), kg);
+        }
+    }
+    by_day.into_iter().map(|(date, kg)| WeighIn { date, kg }).collect()
+}
+
+pub fn bodyweight_markdown(list: &[WeighIn]) -> String {
+    let mut out = vec![
+        "---".to_string(),
+        format!("type: {BODYWEIGHT_TYPE}"),
+        "---".into(),
+        "# Bodyweight".into(),
+        String::new(),
+        "Weigh-ins logged in the Flesh-Forge, in kg. One row per day; add rows here too.".into(),
+        String::new(),
+        "| Date | kg |".into(),
+        "| --- | --- |".into(),
+    ];
+    out.extend(list.iter().map(|w| format!("| {} | {} |", w.date, num(w.kg))));
+    out.push(String::new());
+    out.join("\n")
+}
+
+fn read_bodyweight(vault: &Path) -> Result<Vec<WeighIn>, String> {
+    match fs::read_to_string(forge_dir(vault)?.join(BODYWEIGHT_FILE)) {
+        Ok(text) => Ok(parse_bodyweight(&text)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Logs (or with `None`, removes) the weigh-in for `date`. Returns the whole log.
+fn set_bodyweight_in(vault: &Path, date: &str, kg: Option<f64>) -> Result<Vec<WeighIn>, String> {
+    if !is_iso_date(date) {
+        return Err(format!("Bad date: {date}"));
+    }
+    if let Some(k) = kg {
+        if !(20.0..=400.0).contains(&k) {
+            return Err(format!("Bodyweight out of range: {k} kg"));
+        }
+    }
+    let mut list: Vec<WeighIn> = read_bodyweight(vault)?.into_iter().filter(|w| w.date != date).collect();
+    if let Some(kg) = kg {
+        list.push(WeighIn { date: date.to_string(), kg: (kg * 100.0).round() / 100.0 });
+    }
+    list.sort_by(|a, b| a.date.cmp(&b.date));
+    let dir = forge_dir(vault)?;
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    fs::write(dir.join(BODYWEIGHT_FILE), bodyweight_markdown(&list)).map_err(|e| e.to_string())?;
+    Ok(list)
+}
+
 // ---------------------------------------------------------------- stats
 
 #[derive(Serialize, Debug)]
@@ -648,7 +757,9 @@ pub struct ExercisePoint {
     pub seconds: f64,
     /// Carry distance (metres).
     pub metres: f64,
-    /// "60 kg × 8, 70 kg × 6", "45 s, 40 s", "24 kg · 40 m" or "20 min · 3 km".
+    /// Average RPE over the ticked sets that have one.
+    pub rpe: Option<f64>,
+    /// "60 kg × 8 @8, 70 kg × 6 @9", "45 s, 40 s", "24 kg · 40 m" or "20 min · 3 km".
     pub summary: String,
 }
 
@@ -699,6 +810,8 @@ pub struct ForgeStats {
     pub records: Vec<Record>,
     /// Workout names, most recent first, for "repeat last".
     pub titles: Vec<TitleStat>,
+    /// Every weigh-in up to today, oldest first.
+    pub bodyweight: Vec<WeighIn>,
 }
 
 /// Monday on or before `day` (day 0, 1970-01-01, was a Thursday).
@@ -706,7 +819,7 @@ fn week_start(day: i64) -> i64 {
     day - (day + 3).rem_euclid(7)
 }
 
-pub fn compute_forge_stats(workouts: &[Workout], today: i64) -> ForgeStats {
+pub fn compute_forge_stats(workouts: &[Workout], weigh_ins: &[WeighIn], today: i64) -> ForgeStats {
     let this_week = week_start(today);
     let first_week = this_week - 7 * (WEEKS - 1);
     let mut weeks: BTreeMap<i64, WeekStat> = (0..WEEKS)
@@ -765,8 +878,14 @@ pub fn compute_forge_stats(workouts: &[Workout], today: i64) -> ForgeStats {
                 km: 0.0,
                 seconds: 0.0,
                 metres: 0.0,
+                rpe: None,
                 summary: String::new(),
             };
+            let rated: Vec<f64> = done.iter().filter_map(|s| s.rpe).collect();
+            if !rated.is_empty() {
+                point.rpe = Some(rated.iter().sum::<f64>() / rated.len() as f64);
+            }
+            let at = |s: &Set| s.rpe.map(|r| format!(" @{}", num(r))).unwrap_or_default();
             let mut parts = Vec::new();
             let kg = |w: Option<f64>| w.map(|w| format!("{} kg · ", num(w))).unwrap_or_default();
             let heavier = |top: Option<f64>, w: Option<f64>| match (top, w) {
@@ -781,16 +900,16 @@ pub fn compute_forge_stats(workouts: &[Workout], today: i64) -> ForgeStats {
                     let secs = s.seconds.unwrap_or(0.0);
                     point.seconds = point.seconds.max(secs);
                     point.top_weight = heavier(point.top_weight, s.weight);
-                    parts.push(format!("{}{} s", kg(s.weight), num(secs)));
+                    parts.push(format!("{}{} s{}", kg(s.weight), num(secs), at(s)));
                 } else if e.kind == "carry" {
                     point.metres += s.metres.unwrap_or(0.0);
                     point.top_weight = heavier(point.top_weight, s.weight);
-                    parts.push(format!("{}{} m", kg(s.weight), num(s.metres.unwrap_or(0.0))));
+                    parts.push(format!("{}{} m{}", kg(s.weight), num(s.metres.unwrap_or(0.0)), at(s)));
                 } else {
                     let reps = s.reps.unwrap_or(0);
                     let weight = s.weight;
                     let shown = s.reps.map_or("max".to_string(), |r| r.to_string());
-                    parts.push(format!("{} × {shown}", weight.map_or("bw".to_string(), |w| format!("{} kg", num(w)))));
+                    parts.push(format!("{} × {shown}{}", weight.map_or("bw".to_string(), |w| format!("{} kg", num(w))), at(s)));
                     if let Some(wt) = weight.filter(|_| reps > 0) {
                         point.volume += wt * reps as f64;
                         point.top_weight = Some(point.top_weight.map_or(wt, |t: f64| t.max(wt)));
@@ -805,6 +924,9 @@ pub fn compute_forge_stats(workouts: &[Workout], today: i64) -> ForgeStats {
                 let mut c = vec![format!("{} min", num(point.minutes))];
                 if point.km > 0.0 {
                     c.push(format!("{} km", num(point.km)));
+                }
+                if let Some(r) = point.rpe {
+                    c.push(format!("RPE {}", num(r)));
                 }
                 c.join(" · ")
             } else {
@@ -840,6 +962,10 @@ pub fn compute_forge_stats(workouts: &[Workout], today: i64) -> ForgeStats {
                     last.km += point.km;
                     last.seconds = last.seconds.max(point.seconds);
                     last.metres += point.metres;
+                    last.rpe = match (last.rpe, point.rpe) {
+                        (Some(a), Some(b)) => Some((a + b) / 2.0),
+                        (a, b) => a.or(b),
+                    };
                     last.top_weight = match (last.top_weight, point.top_weight) {
                         (Some(a), Some(b)) => Some(a.max(b)),
                         (a, b) => a.or(b),
@@ -892,6 +1018,7 @@ pub fn compute_forge_stats(workouts: &[Workout], today: i64) -> ForgeStats {
         exercises,
         records,
         titles,
+        bodyweight: weigh_ins.iter().filter(|w| parse_day(&w.date).is_some_and(|d| d <= today)).cloned().collect(),
     }
 }
 
@@ -963,11 +1090,26 @@ pub fn forge_save_library(app: AppHandle, state: State<AppState>, entries: Vec<L
     Ok(saved)
 }
 
+/// The weigh-in log, oldest first.
+#[tauri::command]
+pub fn forge_bodyweight(state: State<AppState>) -> Result<Vec<WeighIn>, String> {
+    read_bodyweight(&vault_root(&state)?)
+}
+
+/// Logs the weigh-in for `date` (`kg` null removes it) and tells every window.
+#[tauri::command]
+pub fn forge_set_bodyweight(app: AppHandle, state: State<AppState>, date: String, kg: Option<f64>) -> Result<Vec<WeighIn>, String> {
+    let list = set_bodyweight_in(&vault_root(&state)?, &date, kg)?;
+    changed(&app);
+    Ok(list)
+}
+
 /// Dashboard numbers. `today` is the user's local date (YYYY-MM-DD).
 #[tauri::command]
 pub fn forge_stats(state: State<AppState>, today: String) -> Result<ForgeStats, String> {
     let today = parse_day(&today).ok_or_else(|| format!("Bad date: {today}"))?;
-    Ok(compute_forge_stats(&list_workouts_in(&vault_root(&state)?)?, today))
+    let vault = vault_root(&state)?;
+    Ok(compute_forge_stats(&list_workouts_in(&vault)?, &read_bodyweight(&vault)?, today))
 }
 
 #[cfg(test)]
@@ -1088,7 +1230,7 @@ mod tests {
             day(today, "Pull", &[]),
             planned,
         ];
-        let s = compute_forge_stats(&workouts, today);
+        let s = compute_forge_stats(&workouts, &[], today);
         // The empty "Pull" workout is still a visit (marked done); the planned one in the future isn't.
         assert_eq!(s.total_visits, 4);
         assert_eq!(s.visits_this_week, 2);
@@ -1153,7 +1295,7 @@ mod tests {
         }
         done.exercises[0].sets[0].seconds = Some(55.0);
         done.status = "done".into();
-        let s = compute_forge_stats(&[done], parse_day("2026-11-20").unwrap());
+        let s = compute_forge_stats(&[done], &[], parse_day("2026-11-20").unwrap());
         let hang = s.exercises.iter().find(|e| e.name == "Dead hangs").unwrap();
         assert_eq!((hang.points[0].seconds, hang.points[0].summary.as_str()), (55.0, "55 s, 40 s"));
         let carry = s.exercises.iter().find(|e| e.name == "Farmer's carries").unwrap();
@@ -1188,6 +1330,57 @@ mod tests {
         assert_eq!(read_library(&vault).unwrap(), saved);
         // The library note isn't mistaken for a workout.
         assert!(list_workouts_in(&vault).unwrap().is_empty());
+        fs::remove_dir_all(&vault).unwrap();
+    }
+
+    #[test]
+    fn rpe_rides_on_any_set() {
+        let rated = |text: &str| parse_set(text, true).and_then(|s| s.rpe);
+        assert_eq!(rated("60 kg × 8 @ RPE 8"), Some(8.0));
+        assert_eq!(rated("bodyweight × max @ rpe 9.5"), Some(9.5));
+        assert_eq!(rated("45 s @8"), Some(8.0));
+        assert_eq!(rated("24 kg · 40 m RPE 7"), Some(7.0));
+        assert_eq!(rated("20 min · 3 km @ RPE 6"), Some(6.0));
+        assert_eq!(rated("60 kg × 8"), None);
+        assert_eq!(rated("60 kg × 8 @ RPE 14"), None, "out of range is ignored");
+        assert_eq!(parse_set("60 kg × 8 @ RPE 8", true).map(|s| (s.weight, s.reps)), Some((Some(60.0), Some(8))));
+
+        let set = Set { done: true, weight: Some(60.0), reps: Some(8), rpe: Some(8.5), ..Set::default() };
+        assert_eq!(set_line(&set, "lift"), "- [x] 60 kg × 8 @ RPE 8.5");
+        let hold = Set { done: false, seconds: Some(45.0), rpe: Some(7.0), ..Set::default() };
+        assert_eq!(set_line(&hold, "hold"), "- [ ] 45 s @ RPE 7");
+
+        let mut w = day(parse_day("2026-11-16").unwrap(), "Push", &[(60.0, 8), (65.0, 6)]);
+        w.exercises[0].sets[0].rpe = Some(7.0);
+        w.exercises[0].sets[1].rpe = Some(9.0);
+        assert_eq!(parse_workout(&to_markdown(&w, false), &w.file).exercises, w.exercises);
+        let s = compute_forge_stats(&[w], &[], parse_day("2026-11-16").unwrap());
+        let p = &s.exercises[0].points[0];
+        assert_eq!((p.rpe, p.summary.as_str()), (Some(8.0), "60 kg × 8 @7, 65 kg × 6 @9"));
+    }
+
+    #[test]
+    fn bodyweight_log() {
+        let text = "# Bodyweight\n\n| Date | kg |\n| --- | --- |\n| 2026-11-10 | 73.4 |\n| 2026-11-16 | 72.5 |\n- 2026-11-12 · 73 kg\n| 2026-11-16 | 72.4 |\nnot a row 2026-11-01\n";
+        let list = parse_bodyweight(text);
+        let pairs: Vec<(&str, f64)> = list.iter().map(|w| (w.date.as_str(), w.kg)).collect();
+        assert_eq!(pairs, vec![("2026-11-10", 73.4), ("2026-11-12", 73.0), ("2026-11-16", 72.4)]);
+        assert_eq!(parse_bodyweight(&bodyweight_markdown(&list)), list);
+
+        let vault = temp_dir("bodyweight");
+        assert!(read_bodyweight(&vault).unwrap().is_empty());
+        set_bodyweight_in(&vault, "2026-11-16", Some(72.5)).unwrap();
+        set_bodyweight_in(&vault, "2026-11-14", Some(73.1)).unwrap();
+        let list = set_bodyweight_in(&vault, "2026-11-16", Some(72.25)).unwrap();
+        assert_eq!(list.iter().map(|w| w.kg).collect::<Vec<_>>(), vec![73.1, 72.25], "one per day, oldest first");
+        assert_eq!(set_bodyweight_in(&vault, "2026-11-14", None).unwrap().len(), 1);
+        assert!(set_bodyweight_in(&vault, "2026-11-15", Some(5.0)).is_err());
+        assert!(set_bodyweight_in(&vault, "16/11/2026", Some(72.0)).is_err());
+        // The log isn't mistaken for a workout.
+        assert!(list_workouts_in(&vault).unwrap().is_empty());
+        // Stats carry weigh-ins up to today only.
+        let ins = vec![WeighIn { date: "2026-11-16".into(), kg: 72.5 }, WeighIn { date: "2026-11-30".into(), kg: 70.0 }];
+        assert_eq!(compute_forge_stats(&[], &ins, parse_day("2026-11-20").unwrap()).bodyweight.len(), 1);
         fs::remove_dir_all(&vault).unwrap();
     }
 

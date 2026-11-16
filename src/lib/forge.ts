@@ -22,7 +22,12 @@ export type WorkoutSet = {
   seconds: number | null;
   /** Carry distance. */
   metres: number | null;
+  /** Rate of perceived exertion, 1-10. */
+  rpe: number | null;
 };
+
+/** One weigh-in from `Flesh-Forge/Bodyweight.md`. */
+export type WeighIn = { date: string; kg: number };
 /** How a set is measured: kg × reps, a timed hold, a loaded carry, or cardio time and distance. */
 export type ExerciseKind = "lift" | "hold" | "carry" | "cardio";
 export const KINDS: ExerciseKind[] = ["lift", "hold", "carry", "cardio"];
@@ -62,6 +67,8 @@ export type ExercisePoint = {
   km: number;
   seconds: number;
   metres: number;
+  /** Average RPE of the session's rated sets. */
+  rpe: number | null;
   summary: string;
 };
 export type ExerciseStat = {
@@ -82,9 +89,11 @@ export type ForgeStats = {
   exercises: ExerciseStat[];
   records: ForgeRecord[];
   titles: { title: string; date: string; file: string }[];
+  /** Weigh-ins up to today, oldest first. */
+  bodyweight: WeighIn[];
 };
 
-const blankSet: WorkoutSet = { done: false, weight: null, reps: null, minutes: null, km: null, seconds: null, metres: null };
+const blankSet: WorkoutSet = { done: false, weight: null, reps: null, minutes: null, km: null, seconds: null, metres: null, rpe: null };
 
 export function emptySet(kind: ExerciseKind): WorkoutSet {
   if (kind === "cardio") return { ...blankSet, minutes: 20 };
@@ -173,13 +182,15 @@ export function pace(minutes: number | null, km: number | null): string | null {
   return s === 60 ? `${m + 1}:00` : `${m}:${String(s).padStart(2, "0")}`;
 }
 
-/** One set as text: "60 kg × 8", "bw × max", "45 s", "24 kg · 40 m", "20 min · 3 km". */
+/** One set as text: "60 kg × 8", "bw × max @9", "45 s", "24 kg · 40 m", "20 min · 3 km". */
 export function setText(kind: ExerciseKind, s: WorkoutSet): string {
   const kgPart = s.weight != null ? `${fmt(s.weight)} kg` : null;
-  if (kind === "cardio") return [s.minutes != null && `${fmt(s.minutes)} min`, s.km != null && `${fmt(s.km)} km`].filter(Boolean).join(" · ") || "–";
-  if (kind === "hold") return [kgPart, s.seconds != null ? `${fmt(s.seconds)} s` : "max hold"].filter(Boolean).join(" · ");
-  if (kind === "carry") return [kgPart, `${fmt(s.metres ?? 0)} m`].filter(Boolean).join(" · ");
-  return `${kgPart ?? "bw"} × ${s.reps ?? "max"}`;
+  const at = s.rpe != null ? ` @${fmt(s.rpe)}` : "";
+  if (kind === "cardio")
+    return ([s.minutes != null && `${fmt(s.minutes)} min`, s.km != null && `${fmt(s.km)} km`].filter(Boolean).join(" · ") || "–") + at;
+  if (kind === "hold") return [kgPart, s.seconds != null ? `${fmt(s.seconds)} s` : "max hold"].filter(Boolean).join(" · ") + at;
+  if (kind === "carry") return [kgPart, `${fmt(s.metres ?? 0)} m`].filter(Boolean).join(" · ") + at;
+  return `${kgPart ?? "bw"} × ${s.reps ?? "max"}${at}`;
 }
 
 /** Days between two YYYY-MM-DD dates (b - a). */
@@ -248,9 +259,20 @@ export function libraryGroups(entries: LibraryEntry[]): { group: string; entries
   return out;
 }
 
+export async function getBodyweight(): Promise<WeighIn[]> {
+  if (isTauri()) return invoke<WeighIn[]>("forge_bodyweight");
+  return demo.bodyweight();
+}
+
+/** Logs the weigh-in for `date`; null removes it. Returns the whole log. */
+export async function setBodyweight(date: string, kg: number | null): Promise<WeighIn[]> {
+  if (isTauri()) return invoke<WeighIn[]>("forge_set_bodyweight", { date, kg });
+  return demo.setBodyweight(date, kg);
+}
+
 export async function getForgeStats(): Promise<ForgeStats> {
   if (isTauri()) return invoke<ForgeStats>("forge_stats", { today: today() });
-  return demoStats(await demo.list());
+  return demoStats(await demo.list(), demo.bodyweight());
 }
 
 // ---------------------------------------------------------------- browser fallback
@@ -258,6 +280,7 @@ export async function getForgeStats(): Promise<ForgeStats> {
 const WORKOUTS_KEY = "flesh-forge.demo.workouts";
 const TEMPLATES_KEY = "flesh-forge.demo.templates";
 const LIBRARY_KEY = "flesh-forge.demo.library";
+const BODYWEIGHT_KEY = "flesh-forge.demo.bodyweight";
 
 const SAMPLE_LIBRARY: LibraryEntry[] = [
   { name: "Back squat", kind: "lift", group: "Lower body", target: "4 × 6-8", rest: "2 min", notes: "Or leg press" },
@@ -355,6 +378,30 @@ const demo = {
     write(TEMPLATES_KEY, demo.templates().filter((x) => x.file !== file));
     void emitApp("forge-changed");
   },
+  bodyweight(): WeighIn[] {
+    try {
+      const raw = localStorage.getItem(BODYWEIGHT_KEY);
+      if (raw) return JSON.parse(raw) as WeighIn[];
+    } catch {
+      /* fall through to samples */
+    }
+    const t = today();
+    return [40, 33, 26, 19, 12, 5, 3].map((ago, i) => ({ date: shiftDate(t, -ago), kg: [74.2, 73.9, 73.8, 73.3, 73.1, 72.7, 72.6][i] }));
+  },
+  setBodyweight(date: string, kg: number | null): WeighIn[] {
+    const list = demo
+      .bodyweight()
+      .filter((w) => w.date !== date)
+      .concat(kg != null ? [{ date, kg }] : [])
+      .sort((a, b) => a.date.localeCompare(b.date));
+    try {
+      localStorage.setItem(BODYWEIGHT_KEY, JSON.stringify(list));
+    } catch {
+      /* ignore */
+    }
+    void emitApp("forge-changed");
+    return list;
+  },
   library(): LibraryEntry[] {
     try {
       const raw = localStorage.getItem(LIBRARY_KEY);
@@ -379,7 +426,7 @@ const demo = {
 };
 
 /** A simple version of the backend's numbers, for the browser preview only. */
-function demoStats(workouts: Workout[]): ForgeStats {
+function demoStats(workouts: Workout[], weighIns: WeighIn[]): ForgeStats {
   const t = today();
   const monday = (d: string) => shiftDate(d, -((new Date(`${d}T00:00:00Z`).getUTCDay() + 6) % 7));
   const thisWeek = monday(t);
@@ -416,6 +463,9 @@ function demoStats(workouts: Workout[]): ForgeStats {
         km: e.kind === "cardio" ? done.reduce((a, s) => a + (s.km ?? 0), 0) : 0,
         seconds: e.kind === "hold" ? Math.max(0, ...done.map((s) => s.seconds ?? 0)) : 0,
         metres: e.kind === "carry" ? done.reduce((a, s) => a + (s.metres ?? 0), 0) : 0,
+        rpe: done.some((s) => s.rpe != null)
+          ? done.reduce((a, s) => a + (s.rpe ?? 0), 0) / done.filter((s) => s.rpe != null).length
+          : null,
         summary: done.map((s) => setText(e.kind, s)).join(", "),
       };
       if (best && point.bestE1rm != null && stat.bestE1rm != null && point.bestE1rm > stat.bestE1rm)
@@ -455,5 +505,6 @@ function demoStats(workouts: Workout[]): ForgeStats {
     ),
     records: records.reverse().slice(0, 8),
     titles: [...titles.values()].sort((a, b) => b.date.localeCompare(a.date)),
+    bodyweight: weighIns.filter((w) => w.date <= t),
   };
 }

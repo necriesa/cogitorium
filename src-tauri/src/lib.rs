@@ -988,6 +988,8 @@ pub fn run() {
             forge::forge_delete_template,
             forge::forge_library,
             forge::forge_save_library,
+            forge::forge_bodyweight,
+            forge::forge_set_bodyweight,
             forge::forge_stats
         ])
         .run(tauri::generate_context!())

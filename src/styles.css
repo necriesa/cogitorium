@@ -2099,6 +2099,26 @@ button.pop-out {
     0 6px 18px rgba(0, 0, 0, 0.7);
 }
 
+/* Flesh-Forge RPE and weigh-ins */
+.forge-at {
+  margin-left: 2px;
+}
+.forge-rpe {
+  width: 38px;
+}
+.forge-weigh {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 2px;
+}
+.forge-weigh .term-label {
+  margin: 0;
+}
+.forge-weigh-note {
+  color: var(--bronze-300);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

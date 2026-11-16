@@ -24,6 +24,7 @@ import {
 } from "../lib/forge";
 import { logToVault, nowTime, today } from "../lib/vaultLog";
 import LibraryPicker from "./LibraryPicker";
+import WeighInField from "./WeighInField";
 
 type Props = {
   workouts: Workout[];
@@ -63,12 +64,14 @@ function NumField({
   label,
   placeholder,
   integer,
+  className = "",
 }: {
   value: number | null;
   onChange: (n: number | null) => void;
   label: string;
   placeholder?: string;
   integer?: boolean;
+  className?: string;
 }) {
   const [text, setText] = useState(value == null ? "" : fmt(value));
   useEffect(() => {
@@ -78,7 +81,7 @@ function NumField({
   }, [value]);
   return (
     <input
-      className="term-input forge-num"
+      className={`term-input forge-num ${className}`}
       inputMode={integer ? "numeric" : "decimal"}
       value={text}
       placeholder={placeholder}
@@ -450,6 +453,7 @@ export default function Planner({ workouts, templates, library, stats, date, onD
             <div className="meter" aria-hidden="true">
               <span style={{ width: `${counts.total ? (counts.done / counts.total) * 100 : 0}%` }} />
             </div>
+            <WeighInField date={draft.date} weighIns={stats?.bodyweight ?? []} />
           </section>
 
           {draft.exercises.map((ex, i) => {
@@ -539,6 +543,16 @@ export default function Planner({ workouts, templates, library, stats, date, onD
                           <span className="forge-unit">reps</span>
                         </>
                       )}
+                      <span className="forge-unit forge-at" aria-hidden="true">
+                        @
+                      </span>
+                      <NumField
+                        value={s.rpe}
+                        label={`Set ${k + 1} RPE, 1 to 10`}
+                        placeholder="rpe"
+                        className="forge-rpe"
+                        onChange={(n) => editSet(i, k, { rpe: n == null ? null : Math.min(10, Math.max(1, n)) })}
+                      />
                       <button
                         className="forge-tool forge-del-set"
                         aria-label={`Remove set ${k + 1}`}
