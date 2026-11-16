@@ -49,17 +49,25 @@ pub struct Set {
     pub done: bool,
     /// Kilograms; `None` for a bodyweight set.
     pub weight: Option<f64>,
+    /// Lift reps; `None` means "as many as you can" (max).
     pub reps: Option<u32>,
     /// Cardio: time and distance.
     pub minutes: Option<f64>,
     pub km: Option<f64>,
+    /// Hold: seconds; `None` means "as long as you can" (max).
+    pub seconds: Option<f64>,
+    /// Carry: distance in metres.
+    pub metres: Option<f64>,
 }
+
+/// Exercise kinds, by how a set is measured.
+pub const KINDS: [&str; 4] = ["lift", "hold", "carry", "cardio"];
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Exercise {
     pub name: String,
-    /// "lift" or "cardio".
+    /// "lift" (kg × reps), "hold" (seconds), "carry" (kg + metres) or "cardio" (minutes, km).
     pub kind: String,
     pub notes: String,
     pub sets: Vec<Set>,
@@ -107,16 +115,24 @@ fn parse_num(s: &str) -> Option<f64> {
     (n.is_finite() && n >= 0.0).then_some(n)
 }
 
-/// The number just before `unit` in `text`: "20 min", "20min" and "20 mins" all give 20.
-fn number_before(text: &str, unit: &str) -> Option<f64> {
-    let tokens: Vec<&str> = text.split(|c: char| c.is_whitespace() || c == '·' || c == ',').filter(|t| !t.is_empty()).collect();
+const MINUTES: [&str; 4] = ["min", "mins", "minute", "minutes"];
+const KM: [&str; 2] = ["km", "kms"];
+const SECONDS: [&str; 5] = ["s", "sec", "secs", "second", "seconds"];
+const METRES: [&str; 5] = ["m", "metre", "metres", "meter", "meters"];
+const KG: [&str; 2] = ["kg", "kgs"];
+
+/// The number given in one of `units`: "20 min", "20min" and "20 minutes" all give 20.
+fn number_with(text: &str, units: &[&str]) -> Option<f64> {
+    let tokens: Vec<&str> = text
+        .split(|c: char| c.is_whitespace() || c == '·' || c == ',' || c == '(' || c == ')')
+        .filter(|t| !t.is_empty())
+        .collect();
     for (i, t) in tokens.iter().enumerate() {
-        let word = t.trim_end_matches('s');
-        if word == unit {
+        if units.contains(t) {
             if let Some(n) = i.checked_sub(1).and_then(|j| parse_num(tokens[j])) {
                 return Some(n);
             }
-        } else if let Some(n) = word.strip_suffix(unit).and_then(parse_num) {
+        } else if let Some(n) = units.iter().find_map(|u| t.strip_suffix(u).and_then(parse_num)) {
             return Some(n);
         }
     }
@@ -135,25 +151,58 @@ fn e1rm(weight: f64, reps: u32) -> f64 {
 // ---------------------------------------------------------------- reading
 
 /// A set line's text (after the checkbox), or `None` if it isn't one.
+///
+/// - cardio: `20 min · 3 km`
+/// - hold: `45 s`, `10 kg · 30 s`, `max hold`
+/// - carry: `24 kg · 40 m`
+/// - lift: `60 kg × 8`, `bodyweight × 12`, `bodyweight × max`
 fn parse_set(text: &str, done: bool) -> Option<Set> {
-    let t = text.trim().to_lowercase();
+    let t = text.trim().to_lowercase().replace(['×', '*'], "x");
     if t.is_empty() {
         return None;
     }
-    if t.contains("min") || t.contains("km") {
-        let minutes = number_before(&t, "min");
-        let km = number_before(&t, "km");
-        return (minutes.is_some() || km.is_some()).then_some(Set { done, minutes, km, ..Set::default() });
+    let minutes = number_with(&t, &MINUTES);
+    let km = number_with(&t, &KM);
+    if minutes.is_some() || km.is_some() {
+        return Some(Set { done, minutes, km, ..Set::default() });
     }
-    let t = t.replace(['×', '*'], "x");
-    let (left, right) = t.rsplit_once('x')?;
-    let reps = right.split_whitespace().next().and_then(|r| r.parse::<u32>().ok())?;
+    let weight = number_with(&t, &KG);
+    if let Some(metres) = number_with(&t, &METRES) {
+        return Some(Set { done, weight, metres: Some(metres), ..Set::default() });
+    }
+    let seconds = number_with(&t, &SECONDS);
+    if seconds.is_some() || t.contains("hold") {
+        return Some(Set { done, weight, seconds, ..Set::default() });
+    }
+    // Lift: "<weight> x <reps>". Prefer " x " so "max" (which has an x in it) survives.
+    let (left, right) = match t.split_once(" x ") {
+        Some(pair) => pair,
+        None => t.rsplit_once('x').filter(|(_, r)| r.trim_start().starts_with(|c: char| c.is_ascii_digit()))?,
+    };
+    let right = right.split_whitespace().next().unwrap_or("");
+    let reps = match right {
+        "max" | "amrap" => None,
+        r => Some(r.parse::<u32>().ok()?),
+    };
     let left = left.trim();
     let weight = match left {
         "" | "bw" | "bodyweight" | "body weight" => None,
-        _ => Some(parse_num(left.trim_end_matches("kg").trim_end_matches("kgs"))?),
+        _ => Some(parse_num(left.trim_end_matches("kgs").trim_end_matches("kg"))?),
     };
-    Some(Set { done, weight, reps: Some(reps), ..Set::default() })
+    Some(Set { done, weight, reps, ..Set::default() })
+}
+
+/// The kind a list of sets implies, when the heading doesn't say.
+fn kind_of(sets: &[Set]) -> &'static str {
+    if sets.iter().any(|s| s.minutes.is_some() || s.km.is_some()) {
+        "cardio"
+    } else if sets.iter().any(|s| s.metres.is_some()) {
+        "carry"
+    } else if sets.iter().any(|s| s.seconds.is_some()) {
+        "hold"
+    } else {
+        "lift"
+    }
 }
 
 /// `- [x] text`, `- [ ] text` or `- text`: (done, text).
@@ -198,7 +247,7 @@ pub fn parse_workout(text: &str, file: &str) -> Workout {
         if let Some(mut e) = current.take() {
             e.notes = notes.join("\n").trim().to_string();
             if e.kind.is_empty() {
-                e.kind = if e.sets.iter().any(|s| s.minutes.is_some() || s.km.is_some()) { "cardio" } else { "lift" }.into();
+                e.kind = kind_of(&e.sets).into();
             }
             list.push(e);
         }
@@ -212,10 +261,11 @@ pub fn parse_workout(text: &str, file: &str) -> Workout {
             }
         } else if let Some(h) = trimmed.strip_prefix("## ") {
             finish(&mut current, &mut ex_notes, &mut w.exercises);
-            let (name, kind) = match h.trim().strip_suffix("· cardio") {
-                Some(n) => (n.trim().to_string(), "cardio".to_string()),
-                None => (h.trim().to_string(), String::new()),
-            };
+            // "## Plank · hold": the kind is named after the exercise (lifts have none).
+            let (name, kind) = KINDS
+                .iter()
+                .find_map(|k| h.trim().strip_suffix(&format!("· {k}")).map(|n| (n.trim().to_string(), k.to_string())))
+                .unwrap_or_else(|| (h.trim().to_string(), String::new()));
             current = Some(Exercise { name, kind, ..Exercise::default() });
         } else if let Some(ex) = current.as_mut() {
             match list_item(line).and_then(|(done, t)| parse_set(t, done)) {
@@ -246,23 +296,35 @@ pub fn parse_workout(text: &str, file: &str) -> Workout {
 
 // ---------------------------------------------------------------- writing
 
-fn set_line(set: &Set, cardio: bool) -> String {
+fn set_line(set: &Set, kind: &str) -> String {
     let tick = if set.done { "x" } else { " " };
-    let text = if cardio {
-        let mut parts = Vec::new();
-        if let Some(m) = set.minutes {
-            parts.push(format!("{} min", num(m)));
+    let kg = set.weight.map(|w| format!("{} kg", num(w)));
+    let text = match kind {
+        "cardio" => {
+            let mut parts = Vec::new();
+            if let Some(m) = set.minutes {
+                parts.push(format!("{} min", num(m)));
+            }
+            if let Some(k) = set.km {
+                parts.push(format!("{} km", num(k)));
+            }
+            if parts.is_empty() {
+                parts.push("0 min".into());
+            }
+            parts.join(" · ")
         }
-        if let Some(k) = set.km {
-            parts.push(format!("{} km", num(k)));
+        "hold" => {
+            let time = set.seconds.map_or("max hold".to_string(), |s| format!("{} s", num(s)));
+            kg.map_or(time.clone(), |kg| format!("{kg} · {time}"))
         }
-        if parts.is_empty() {
-            parts.push("0 min".into());
+        "carry" => {
+            let distance = format!("{} m", num(set.metres.unwrap_or(0.0)));
+            kg.map_or(distance.clone(), |kg| format!("{kg} · {distance}"))
         }
-        parts.join(" · ")
-    } else {
-        let weight = set.weight.map_or("bodyweight".to_string(), |w| format!("{} kg", num(w)));
-        format!("{weight} × {}", set.reps.unwrap_or(0))
+        _ => {
+            let reps = set.reps.map_or("max".to_string(), |r| r.to_string());
+            format!("{} × {reps}", kg.unwrap_or_else(|| "bodyweight".into()))
+        }
     };
     format!("- [{tick}] {text}")
 }
@@ -298,11 +360,12 @@ pub fn to_markdown(w: &Workout, template: bool) -> String {
         out.push(String::new());
     }
     for e in &w.exercises {
-        let cardio = e.is_cardio();
-        out.push(format!("## {}{}", one_line(&e.name), if cardio { " · cardio" } else { "" }));
+        let kind = if KINDS.contains(&e.kind.as_str()) { e.kind.as_str() } else { "lift" };
+        let suffix = if kind == "lift" { String::new() } else { format!(" · {kind}") };
+        out.push(format!("## {}{suffix}", one_line(&e.name)));
         for s in &e.sets {
             let s = if template { Set { done: false, ..s.clone() } } else { s.clone() };
-            out.push(set_line(&s, cardio));
+            out.push(set_line(&s, kind));
         }
         let notes: Vec<&str> = e.notes.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
         for (i, n) in notes.iter().enumerate() {
@@ -414,6 +477,148 @@ fn remove_in(dir: &Path, file: &str) -> Result<(), String> {
     }
 }
 
+// ---------------------------------------------------------------- exercise library
+
+/// The library note: every exercise you can pick from, grouped, one table row each.
+const LIBRARY_FILE: &str = "Exercise Library.md";
+const LIBRARY_TYPE: &str = "flesh-forge-library";
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LibraryEntry {
+    pub name: String,
+    /// "lift", "hold", "carry" or "cardio".
+    pub kind: String,
+    /// The heading it sits under: "Lower body", "Core", …
+    pub group: String,
+    /// The usual prescription, e.g. "4 × 6-8", "3 × 45s", "35-45 min".
+    pub target: String,
+    /// Rest between sets, e.g. "2 min".
+    pub rest: String,
+    pub notes: String,
+}
+
+/// The word the library table uses for a kind ("reps" reads better than "lift").
+fn kind_word(kind: &str) -> &'static str {
+    match kind {
+        "hold" => "hold",
+        "carry" => "carry",
+        "cardio" => "cardio",
+        _ => "reps",
+    }
+}
+
+fn kind_from_word(word: &str) -> &'static str {
+    match word.trim().to_lowercase().as_str() {
+        "hold" | "time" | "timed" => "hold",
+        "carry" | "distance" => "carry",
+        "cardio" | "session" => "cardio",
+        _ => "lift",
+    }
+}
+
+/// Reads the library note: `## Group` headings, each followed by a table of
+/// `| Exercise | Type | Target | Rest | Notes |` rows.
+pub fn parse_library(text: &str) -> Vec<LibraryEntry> {
+    let mut group = "Other".to_string();
+    let mut out: Vec<LibraryEntry> = Vec::new();
+    for line in text.lines() {
+        let t = line.trim();
+        if let Some(h) = t.strip_prefix("## ") {
+            group = h.trim().to_string();
+            continue;
+        }
+        let Some(row) = t.strip_prefix('|') else { continue };
+        let cells: Vec<String> = row.trim_end_matches('|').split('|').map(|c| c.trim().to_string()).collect();
+        let name = cells.first().cloned().unwrap_or_default();
+        let divider = name.chars().all(|c| c == '-' || c == ':');
+        if name.is_empty() || divider || name.eq_ignore_ascii_case("exercise") {
+            continue;
+        }
+        if out.iter().any(|e| e.name.eq_ignore_ascii_case(&name)) {
+            continue;
+        }
+        let cell = |i: usize| cells.get(i).cloned().unwrap_or_default();
+        out.push(LibraryEntry {
+            name,
+            kind: kind_from_word(&cell(1)).into(),
+            group: group.clone(),
+            target: cell(2),
+            rest: cell(3),
+            notes: cell(4),
+        });
+    }
+    out
+}
+
+/// One table cell: a single line with no pipes.
+fn cell(s: &str) -> String {
+    one_line(s).replace('|', "/")
+}
+
+/// The library note, groups in the order they first appear.
+pub fn library_markdown(entries: &[LibraryEntry]) -> String {
+    let mut out = vec![
+        "---".to_string(),
+        format!("type: {LIBRARY_TYPE}"),
+        "---".into(),
+        "# Exercise Library".into(),
+        String::new(),
+        "Every exercise the Flesh-Forge offers when you build a workout or a template. Type is `reps` (kg × reps), `hold` (seconds), `carry` (kg and metres) or `cardio` (minutes, km). Edit it here or in the Library tab.".into(),
+    ];
+    let mut groups: Vec<String> = Vec::new();
+    for e in entries {
+        let g = if e.group.trim().is_empty() { "Other".to_string() } else { one_line(&e.group) };
+        if !groups.contains(&g) {
+            groups.push(g);
+        }
+    }
+    for g in groups {
+        out.push(String::new());
+        out.push(format!("## {g}"));
+        out.push(String::new());
+        out.push("| Exercise | Type | Target | Rest | Notes |".into());
+        out.push("| --- | --- | --- | --- | --- |".into());
+        for e in entries.iter().filter(|e| (if e.group.trim().is_empty() { "Other".to_string() } else { one_line(&e.group) }) == g) {
+            out.push(format!(
+                "| {} | {} | {} | {} | {} |",
+                cell(&e.name),
+                kind_word(&e.kind),
+                cell(&e.target),
+                cell(&e.rest),
+                cell(&e.notes)
+            ));
+        }
+    }
+    out.push(String::new());
+    out.join("\n")
+}
+
+fn read_library(vault: &Path) -> Result<Vec<LibraryEntry>, String> {
+    match fs::read_to_string(forge_dir(vault)?.join(LIBRARY_FILE)) {
+        Ok(text) => Ok(parse_library(&text)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Writes the library, dropping nameless rows and repeated names (the first wins).
+fn write_library(vault: &Path, entries: Vec<LibraryEntry>) -> Result<Vec<LibraryEntry>, String> {
+    let mut clean: Vec<LibraryEntry> = Vec::new();
+    for mut e in entries {
+        e.name = one_line(&e.name).replace('|', "/");
+        if e.name.is_empty() || clean.iter().any(|c| c.name.eq_ignore_ascii_case(&e.name)) {
+            continue;
+        }
+        e.kind = kind_from_word(kind_word(&e.kind)).into();
+        clean.push(e);
+    }
+    let dir = forge_dir(vault)?;
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    fs::write(dir.join(LIBRARY_FILE), library_markdown(&clean)).map_err(|e| e.to_string())?;
+    Ok(parse_library(&library_markdown(&clean)))
+}
+
 // ---------------------------------------------------------------- stats
 
 #[derive(Serialize, Debug)]
@@ -439,7 +644,11 @@ pub struct ExercisePoint {
     pub volume: f64,
     pub minutes: f64,
     pub km: f64,
-    /// "60 kg × 8, 70 kg × 6" or "20 min · 3 km".
+    /// Longest ticked hold (seconds).
+    pub seconds: f64,
+    /// Carry distance (metres).
+    pub metres: f64,
+    /// "60 kg × 8, 70 kg × 6", "45 s, 40 s", "24 kg · 40 m" or "20 min · 3 km".
     pub summary: String,
 }
 
@@ -554,17 +763,34 @@ pub fn compute_forge_stats(workouts: &[Workout], today: i64) -> ForgeStats {
                 volume: 0.0,
                 minutes: 0.0,
                 km: 0.0,
+                seconds: 0.0,
+                metres: 0.0,
                 summary: String::new(),
             };
             let mut parts = Vec::new();
+            let kg = |w: Option<f64>| w.map(|w| format!("{} kg · ", num(w))).unwrap_or_default();
+            let heavier = |top: Option<f64>, w: Option<f64>| match (top, w) {
+                (Some(a), Some(b)) => Some(a.max(b)),
+                (a, b) => a.or(b),
+            };
             for s in &done {
                 if e.is_cardio() {
                     point.minutes += s.minutes.unwrap_or(0.0);
                     point.km += s.km.unwrap_or(0.0);
+                } else if e.kind == "hold" {
+                    let secs = s.seconds.unwrap_or(0.0);
+                    point.seconds = point.seconds.max(secs);
+                    point.top_weight = heavier(point.top_weight, s.weight);
+                    parts.push(format!("{}{} s", kg(s.weight), num(secs)));
+                } else if e.kind == "carry" {
+                    point.metres += s.metres.unwrap_or(0.0);
+                    point.top_weight = heavier(point.top_weight, s.weight);
+                    parts.push(format!("{}{} m", kg(s.weight), num(s.metres.unwrap_or(0.0))));
                 } else {
                     let reps = s.reps.unwrap_or(0);
                     let weight = s.weight;
-                    parts.push(format!("{} × {reps}", weight.map_or("bw".to_string(), |w| format!("{} kg", num(w)))));
+                    let shown = s.reps.map_or("max".to_string(), |r| r.to_string());
+                    parts.push(format!("{} × {shown}", weight.map_or("bw".to_string(), |w| format!("{} kg", num(w)))));
                     if let Some(wt) = weight.filter(|_| reps > 0) {
                         point.volume += wt * reps as f64;
                         point.top_weight = Some(point.top_weight.map_or(wt, |t: f64| t.max(wt)));
@@ -612,6 +838,8 @@ pub fn compute_forge_stats(workouts: &[Workout], today: i64) -> ForgeStats {
                     last.volume += point.volume;
                     last.minutes += point.minutes;
                     last.km += point.km;
+                    last.seconds = last.seconds.max(point.seconds);
+                    last.metres += point.metres;
                     last.top_weight = match (last.top_weight, point.top_weight) {
                         (Some(a), Some(b)) => Some(a.max(b)),
                         (a, b) => a.or(b),
@@ -719,6 +947,20 @@ pub fn forge_delete_template(app: AppHandle, state: State<AppState>, file: Strin
     remove_in(&template_dir(&vault_root(&state)?)?, &file)?;
     changed(&app);
     Ok(())
+}
+
+/// The exercise library, in the note's order.
+#[tauri::command]
+pub fn forge_library(state: State<AppState>) -> Result<Vec<LibraryEntry>, String> {
+    read_library(&vault_root(&state)?)
+}
+
+/// Replaces the exercise library and tells every window. Returns it as saved.
+#[tauri::command]
+pub fn forge_save_library(app: AppHandle, state: State<AppState>, entries: Vec<LibraryEntry>) -> Result<Vec<LibraryEntry>, String> {
+    let saved = write_library(&vault_root(&state)?, entries)?;
+    changed(&app);
+    Ok(saved)
 }
 
 /// Dashboard numbers. `today` is the user's local date (YYYY-MM-DD).
@@ -864,6 +1106,89 @@ mod tests {
         assert_eq!(found, vec![("2026-11-16".to_string(), 70.0), ("2026-11-09".to_string(), 65.0)]);
         assert_eq!(s.titles[0].title, "Pull");
         assert_eq!(s.titles[1].date, "2026-11-16", "repeat-last points at the latest Push");
+    }
+
+    #[test]
+    fn holds_carries_and_max_sets() {
+        let hold = |s: Option<f64>, w: Option<f64>| Set { seconds: s, weight: w, ..Set::default() };
+        assert_eq!(parse_set("45 s", false), Some(hold(Some(45.0), None)));
+        assert_eq!(parse_set("30s", false), Some(hold(Some(30.0), None)));
+        assert_eq!(parse_set("10 kg · 30 s", false), Some(hold(Some(30.0), Some(10.0))));
+        assert_eq!(parse_set("max hold", false), Some(hold(None, None)));
+        assert_eq!(parse_set("24 kg · 40 m", true), Some(Set { done: true, weight: Some(24.0), metres: Some(40.0), ..Set::default() }));
+        assert_eq!(parse_set("bodyweight × max", false), Some(Set { reps: None, ..Set::default() }));
+        assert_eq!(parse_set("60kgx8", false), Some(lift(Some(60.0), 8, false)));
+
+        let w = Workout {
+            date: "2026-11-20".into(),
+            title: "Pull".into(),
+            status: "planned".into(),
+            exercises: vec![
+                Exercise { name: "Dead hangs".into(), kind: "hold".into(), sets: vec![hold(None, None), hold(Some(40.0), None)], ..Exercise::default() },
+                Exercise {
+                    name: "Farmer's carries".into(),
+                    kind: "carry".into(),
+                    sets: vec![Set { weight: Some(24.0), metres: Some(40.0), ..Set::default() }],
+                    ..Exercise::default()
+                },
+                Exercise { name: "Archer push-ups".into(), kind: "lift".into(), sets: vec![Set::default()], ..Exercise::default() },
+                // An empty hold keeps its kind through the heading.
+                Exercise { name: "Plank".into(), kind: "hold".into(), ..Exercise::default() },
+            ],
+            ..Workout::default()
+        };
+        let md = to_markdown(&w, false);
+        assert!(md.contains("## Dead hangs · hold\n- [ ] max hold\n- [ ] 40 s"));
+        assert!(md.contains("## Farmer's carries · carry\n- [ ] 24 kg · 40 m"));
+        assert!(md.contains("## Archer push-ups\n- [ ] bodyweight × max"));
+        let back = parse_workout(&md, "2026-11-20 Pull.md");
+        assert_eq!(back.exercises, Workout { file: "2026-11-20 Pull.md".into(), ..w.clone() }.exercises);
+
+        // Stats: the longest hold and the carry distance are tracked per session.
+        let mut done = w;
+        for e in &mut done.exercises {
+            for s in &mut e.sets {
+                s.done = true;
+            }
+        }
+        done.exercises[0].sets[0].seconds = Some(55.0);
+        done.status = "done".into();
+        let s = compute_forge_stats(&[done], parse_day("2026-11-20").unwrap());
+        let hang = s.exercises.iter().find(|e| e.name == "Dead hangs").unwrap();
+        assert_eq!((hang.points[0].seconds, hang.points[0].summary.as_str()), (55.0, "55 s, 40 s"));
+        let carry = s.exercises.iter().find(|e| e.name == "Farmer's carries").unwrap();
+        assert_eq!((carry.points[0].metres, carry.best_weight), (40.0, Some(24.0)));
+        assert_eq!(s.weeks.last().unwrap().volume, 0.0, "holds and carries aren't lifting volume");
+    }
+
+    #[test]
+    fn library_round_trip() {
+        let text = "# Exercise Library\n\n## Lower body\n\n| Exercise | Type | Target | Rest | Notes |\n| --- | --- | --- | --- | --- |\n| Back squat | reps | 4 × 6-8 | 2 min | or leg press |\n| Wall sit | hold | 4 × 30s | 30 s | |\n\n## Grip\n\n| Exercise | Type | Target | Rest | Notes |\n|---|---|---|---|---|\n| Farmer's carries | carry | 3 × 30-40m | 90 s | |\n| Back squat | reps | dup | | |\n";
+        let lib = parse_library(text);
+        assert_eq!(lib.len(), 3, "the repeated name is dropped");
+        assert_eq!(lib[0], LibraryEntry {
+            name: "Back squat".into(),
+            kind: "lift".into(),
+            group: "Lower body".into(),
+            target: "4 × 6-8".into(),
+            rest: "2 min".into(),
+            notes: "or leg press".into(),
+        });
+        assert_eq!((lib[1].kind.as_str(), lib[2].kind.as_str(), lib[2].group.as_str()), ("hold", "carry", "Grip"));
+        assert_eq!(parse_library(&library_markdown(&lib)), lib);
+
+        let vault = temp_dir("library");
+        assert!(read_library(&vault).unwrap().is_empty());
+        let mut edited = lib.clone();
+        edited.push(LibraryEntry { name: "  pipe | name ".into(), kind: "cardio".into(), ..LibraryEntry::default() });
+        edited.push(LibraryEntry { name: "".into(), ..LibraryEntry::default() });
+        let saved = write_library(&vault, edited).unwrap();
+        assert_eq!(saved.len(), 4);
+        assert_eq!((saved[3].name.as_str(), saved[3].group.as_str()), ("pipe / name", "Other"));
+        assert_eq!(read_library(&vault).unwrap(), saved);
+        // The library note isn't mistaken for a workout.
+        assert!(list_workouts_in(&vault).unwrap().is_empty());
+        fs::remove_dir_all(&vault).unwrap();
     }
 
     #[test]

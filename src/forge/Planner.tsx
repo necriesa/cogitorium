@@ -10,19 +10,25 @@ import {
   saveTemplate,
   saveWorkout,
   setCount,
+  setsFromTarget,
   shiftDate,
   volumeOf,
+  KIND_LABEL,
+  KINDS,
   type Exercise,
   type ExerciseKind,
   type ForgeStats,
+  type LibraryEntry,
   type Workout,
   type WorkoutSet,
 } from "../lib/forge";
 import { logToVault, nowTime, today } from "../lib/vaultLog";
+import LibraryPicker from "./LibraryPicker";
 
 type Props = {
   workouts: Workout[];
   templates: Workout[];
+  library: LibraryEntry[];
   stats: ForgeStats | null;
   date: string;
   onDate: (date: string) => void;
@@ -93,12 +99,13 @@ function NumField({
  * and sets. Every change is saved to the workout's note in the vault after a
  * short pause; ticks and status changes are saved at once.
  */
-export default function Planner({ workouts, templates, stats, date, onDate, onRefresh }: Props) {
+export default function Planner({ workouts, templates, library, stats, date, onDate, onRefresh }: Props) {
   const onDay = useMemo(() => workouts.filter((w) => w.date === date), [workouts, date]);
   const [file, setFile] = useState<string | null>(null);
   const [draft, setDraft] = useState<Workout | null>(null);
   const [newTitle, setNewTitle] = useState("");
   const [exName, setExName] = useState("");
+  const [picking, setPicking] = useState(false);
   const [status, setStatus] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -200,7 +207,14 @@ export default function Planner({ workouts, templates, stats, date, onDate, onRe
   }
 
   const repeatable = (stats?.titles ?? []).filter((t) => t.date < date).slice(0, 6);
-  const knownNames = useMemo(() => (stats?.exercises ?? []).map((e) => e.name), [stats]);
+  // Suggestions: the library first, then anything else you've trained.
+  const knownNames = useMemo(() => {
+    const names = library.map((e) => e.name);
+    for (const e of stats?.exercises ?? []) if (!names.some((n) => n.toLowerCase() === e.name.toLowerCase())) names.push(e.name);
+    return names;
+  }, [library, stats]);
+
+  const libraryEntry = (name: string) => library.find((e) => e.name.toLowerCase() === name.trim().toLowerCase());
 
   // ------------------------------------------------------------ exercises
   /** The last time an exercise was trained before this workout's day. */
@@ -219,14 +233,25 @@ export default function Planner({ workouts, templates, stats, date, onDate, onRe
     return null;
   }
 
-  function addExercise(kind: ExerciseKind) {
-    const name = exName.trim();
+  /**
+   * Adds an exercise. Its sets come from the last time you did it (weights
+   * included), else from its library target ("4 × 6-8" → four sets of 6),
+   * else one default set. A library or history entry decides the kind.
+   */
+  function addExercise(kind: ExerciseKind, name = exName) {
+    name = name.trim();
     if (!name) return;
+    const entry = libraryEntry(name);
     const known = stats?.exercises.find((e) => e.name.toLowerCase() === name.toLowerCase());
     const before = lastSets(name);
-    const useKind = known?.kind ?? kind;
-    const sets = before && before.kind === useKind ? before.sets.map((s) => ({ ...s, done: false })) : [emptySet(useKind)];
-    edit((w) => ({ ...w, exercises: [...w.exercises, { name: known?.name ?? name, kind: useKind, notes: "", sets }] }));
+    const useKind = entry?.kind ?? known?.kind ?? kind;
+    const sets =
+      before && before.kind === useKind
+        ? before.sets.map((s) => ({ ...s, done: false }))
+        : entry
+          ? setsFromTarget(useKind, entry.target)
+          : [emptySet(useKind)];
+    edit((w) => ({ ...w, exercises: [...w.exercises, { name: entry?.name ?? known?.name ?? name, kind: useKind, notes: "", sets }] }));
     setExName("");
   }
 
@@ -395,7 +420,7 @@ export default function Planner({ workouts, templates, stats, date, onDate, onRe
               <p className="term-label">From template</p>
               <div className="chips">
                 {templates.map((t) => (
-                  <button key={t.file} className="chip" onClick={() => begin(planFrom(t, date))}>
+                  <button key={t.file} className="chip" onClick={() => begin(planFrom(t, date, t.title, true))}>
                     {t.title}
                   </button>
                 ))}
@@ -429,6 +454,7 @@ export default function Planner({ workouts, templates, stats, date, onDate, onRe
 
           {draft.exercises.map((ex, i) => {
             const last = lastTime(ex.name);
+            const entry = libraryEntry(ex.name);
             const cardio = ex.kind === "cardio";
             return (
               <section key={i} className="cogitator forge-panel forge-ex" aria-label={ex.name || "Exercise"}>
@@ -440,7 +466,7 @@ export default function Planner({ workouts, templates, stats, date, onDate, onRe
                     aria-label="Exercise name"
                     onChange={(e) => editExercise(i, (x) => ({ ...x, name: e.target.value }))}
                   />
-                  {cardio && <span className="forge-kind">cardio</span>}
+                  {ex.kind !== "lift" && <span className="forge-kind">{ex.kind}</span>}
                   <span className="forge-tools">
                     <button className="forge-tool" onClick={() => moveExercise(i, -1)} disabled={i === 0} aria-label="Move up">
                       ↑
@@ -462,6 +488,13 @@ export default function Planner({ workouts, templates, stats, date, onDate, onRe
                     </button>
                   </span>
                 </div>
+                {entry && (entry.target || entry.rest) && (
+                  <p className="forge-last forge-plan" title={entry.notes || undefined}>
+                    plan {entry.target}
+                    {entry.rest && ` · rest ${entry.rest}`}
+                    {entry.notes && ` · ${entry.notes}`}
+                  </p>
+                )}
                 {last && (
                   <p className="forge-last">
                     last {last.date.slice(5)} · {last.summary}
@@ -484,11 +517,25 @@ export default function Planner({ workouts, templates, stats, date, onDate, onRe
                           <span className="forge-unit">km</span>
                           {pace(s.minutes, s.km) && <span className="forge-unit forge-pace">{pace(s.minutes, s.km)}/km</span>}
                         </>
+                      ) : ex.kind === "hold" ? (
+                        <>
+                          <NumField value={s.seconds} label={`Set ${k + 1} seconds`} placeholder="max" onChange={(n) => editSet(i, k, { seconds: n })} />
+                          <span className="forge-unit">s</span>
+                          <NumField value={s.weight} label={`Set ${k + 1} added weight in kg`} placeholder="–" onChange={(n) => editSet(i, k, { weight: n })} />
+                          <span className="forge-unit">kg</span>
+                        </>
+                      ) : ex.kind === "carry" ? (
+                        <>
+                          <NumField value={s.weight} label={`Set ${k + 1} weight in kg`} placeholder="–" onChange={(n) => editSet(i, k, { weight: n })} />
+                          <span className="forge-unit">kg ·</span>
+                          <NumField value={s.metres} label={`Set ${k + 1} metres`} placeholder="0" onChange={(n) => editSet(i, k, { metres: n })} />
+                          <span className="forge-unit">m</span>
+                        </>
                       ) : (
                         <>
                           <NumField value={s.weight} label={`Set ${k + 1} weight in kg`} placeholder="bw" onChange={(n) => editSet(i, k, { weight: n })} />
                           <span className="forge-unit">kg ×</span>
-                          <NumField value={s.reps} label={`Set ${k + 1} reps`} placeholder="0" integer onChange={(n) => editSet(i, k, { reps: n })} />
+                          <NumField value={s.reps} label={`Set ${k + 1} reps`} placeholder="max" integer onChange={(n) => editSet(i, k, { reps: n })} />
                           <span className="forge-unit">reps</span>
                         </>
                       )}
@@ -545,13 +592,22 @@ export default function Planner({ workouts, templates, stats, date, onDate, onRe
               />
             </label>
             <div className="chips">
-              <button className="chip" disabled={!exName.trim()} onClick={() => addExercise("lift")}>
-                + Sets &amp; reps
-              </button>
-              <button className="chip" disabled={!exName.trim()} onClick={() => addExercise("cardio")}>
-                + Cardio
-              </button>
+              {KINDS.map((k) => (
+                <button key={k} className="chip" disabled={!exName.trim()} onClick={() => addExercise(k)}>
+                  + {KIND_LABEL[k]}
+                </button>
+              ))}
             </div>
+            <button className={picking ? "lib-toggle on" : "lib-toggle"} aria-expanded={picking} onClick={() => setPicking((v) => !v)}>
+              {picking ? "Close library" : `Pick from library (${library.length})`}
+            </button>
+            {picking && (
+              <LibraryPicker
+                library={library}
+                added={draft.exercises.map((e) => e.name.toLowerCase())}
+                onPick={(entry) => addExercise(entry.kind, entry.name)}
+              />
+            )}
             <label className="term-field">
               <span className="term-label">Session notes</span>
               <textarea

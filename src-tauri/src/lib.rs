@@ -986,6 +986,8 @@ pub fn run() {
             forge::forge_templates,
             forge::forge_save_template,
             forge::forge_delete_template,
+            forge::forge_library,
+            forge::forge_save_library,
             forge::forge_stats
         ])
         .run(tauri::generate_context!())

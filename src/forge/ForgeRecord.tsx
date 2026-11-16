@@ -83,17 +83,40 @@ function WeekBars({
   );
 }
 
-type Metric = "top" | "e1rm" | "minutes" | "km";
-const METRIC_LABEL: Record<Metric, string> = { top: "Top set", e1rm: "Est. 1RM", minutes: "Minutes", km: "Distance" };
-const METRIC_UNIT: Record<Metric, string> = { top: "kg", e1rm: "kg", minutes: "min", km: "km" };
+type Metric = "top" | "heaviest" | "e1rm" | "minutes" | "km" | "seconds" | "metres";
+const METRIC_LABEL: Record<Metric, string> = {
+  top: "Top set",
+  heaviest: "Heaviest",
+  e1rm: "Est. 1RM",
+  minutes: "Minutes",
+  km: "Distance",
+  seconds: "Longest hold",
+  metres: "Distance",
+};
+const METRIC_UNIT: Record<Metric, string> = { top: "kg", heaviest: "kg", e1rm: "kg", minutes: "min", km: "km", seconds: "s", metres: "m" };
+/** What each kind of exercise can be charted by; the first is the default. */
+const METRICS: Record<ExerciseStat["kind"], Metric[]> = {
+  lift: ["top", "e1rm"],
+  hold: ["seconds"],
+  carry: ["heaviest", "metres"],
+  cardio: ["minutes", "km"],
+};
 
 /** One exercise over time, as a line with a marker per session. */
 function Progression({ exercise }: { exercise: ExerciseStat }) {
-  const cardio = exercise.kind === "cardio";
-  const [metric, setMetric] = useState<Metric>(cardio ? "minutes" : "top");
-  const m: Metric = cardio ? (metric === "top" || metric === "e1rm" ? "minutes" : metric) : metric === "minutes" || metric === "km" ? "top" : metric;
+  const options = METRICS[exercise.kind] ?? METRICS.lift;
+  const [metric, setMetric] = useState<Metric>(options[0]);
+  const m: Metric = options.includes(metric) ? metric : options[0];
   const pick = (p: ExerciseStat["points"][number]) =>
-    m === "top" ? p.topWeight : m === "e1rm" ? p.bestE1rm : m === "minutes" ? p.minutes || null : p.km || null;
+    ({
+      top: p.topWeight,
+      heaviest: p.topWeight,
+      e1rm: p.bestE1rm,
+      minutes: p.minutes || null,
+      km: p.km || null,
+      seconds: p.seconds || null,
+      metres: p.metres || null,
+    })[m];
   const points = exercise.points.map((p) => ({ p, v: pick(p) })).filter((x): x is { p: typeof x.p; v: number } => x.v != null);
   const [hover, setHover] = useState<number | null>(null);
 
@@ -116,7 +139,7 @@ function Progression({ exercise }: { exercise: ExerciseStat }) {
   return (
     <div className="forge-prog">
       <div className="chips" role="group" aria-label="Measure">
-        {(cardio ? (["minutes", "km"] as Metric[]) : (["top", "e1rm"] as Metric[])).map((k) => (
+        {options.map((k) => (
           <button key={k} className={k === m ? "chip on" : "chip"} aria-pressed={k === m} onClick={() => setMetric(k)}>
             {METRIC_LABEL[k]}
           </button>
@@ -256,6 +279,7 @@ export default function ForgeRecord({ stats, workouts, onOpenDay }: Props) {
             <p className="forge-line">
               {exercise.points.length} sessions
               {exercise.bestWeight != null && ` · heaviest ${fmt(exercise.bestWeight)} kg`}
+              {exercise.kind === "hold" && ` · longest ${fmt(Math.max(0, ...exercise.points.map((p) => p.seconds)))} s`}
               {exercise.bestE1rm != null && ` · best est. 1RM ${fmt(Math.round(exercise.bestE1rm * 10) / 10)} kg`}
             </p>
             <Progression key={exercise.name} exercise={exercise} />

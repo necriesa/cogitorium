@@ -14,11 +14,30 @@ export type WorkoutSet = {
   done: boolean;
   /** Kilograms; null for a bodyweight set. */
   weight: number | null;
+  /** Lift reps; null = as many as you can (max). */
   reps: number | null;
   minutes: number | null;
   km: number | null;
+  /** Hold time; null = as long as you can (max). */
+  seconds: number | null;
+  /** Carry distance. */
+  metres: number | null;
 };
-export type ExerciseKind = "lift" | "cardio";
+/** How a set is measured: kg × reps, a timed hold, a loaded carry, or cardio time and distance. */
+export type ExerciseKind = "lift" | "hold" | "carry" | "cardio";
+export const KINDS: ExerciseKind[] = ["lift", "hold", "carry", "cardio"];
+export const KIND_LABEL: Record<ExerciseKind, string> = { lift: "Sets & reps", hold: "Hold", carry: "Carry", cardio: "Cardio" };
+
+/** One exercise in the library note (`Flesh-Forge/Exercise Library.md`). */
+export type LibraryEntry = {
+  name: string;
+  kind: ExerciseKind;
+  group: string;
+  /** The usual prescription: "4 × 6-8", "3 × 45s", "3 × 30-40m", "35-45 min". */
+  target: string;
+  rest: string;
+  notes: string;
+};
 export type Exercise = { name: string; kind: ExerciseKind; notes: string; sets: WorkoutSet[] };
 export type WorkoutStatus = "planned" | "active" | "done";
 export type Workout = {
@@ -41,6 +60,8 @@ export type ExercisePoint = {
   volume: number;
   minutes: number;
   km: number;
+  seconds: number;
+  metres: number;
   summary: string;
 };
 export type ExerciseStat = {
@@ -63,20 +84,59 @@ export type ForgeStats = {
   titles: { title: string; date: string; file: string }[];
 };
 
-export const emptySet = (kind: ExerciseKind): WorkoutSet =>
-  kind === "cardio"
-    ? { done: false, weight: null, reps: null, minutes: 20, km: null }
-    : { done: false, weight: null, reps: 8, minutes: null, km: null };
+const blankSet: WorkoutSet = { done: false, weight: null, reps: null, minutes: null, km: null, seconds: null, metres: null };
+
+export function emptySet(kind: ExerciseKind): WorkoutSet {
+  if (kind === "cardio") return { ...blankSet, minutes: 20 };
+  if (kind === "hold") return { ...blankSet, seconds: 30 };
+  if (kind === "carry") return { ...blankSet, metres: 30 };
+  return { ...blankSet, reps: 8 };
+}
+
+/**
+ * Starting sets from a library target, taking the low end of a range so
+ * there's room to progress: "4 × 6-8" → four sets of 6, "3 × max" → three
+ * max sets, "3 × 30-45s" → three 30 s holds, "3 × 30-40m" → three 30 m
+ * carries, "35-45 min" → one 35 min session. Anything unreadable gives one
+ * default set.
+ */
+export function setsFromTarget(kind: ExerciseKind, target: string): WorkoutSet[] {
+  const t = target.toLowerCase().replace(/[×*]/g, "x");
+  const m = t.match(/^\s*(\d+)\s*x\s*(.*)$/);
+  const count = m ? Math.min(12, Math.max(1, Number(m[1]))) : 1;
+  const rest = m ? m[2] : t;
+  const first = rest.match(/(\d+(?:[.,]\d+)?)/);
+  const n = first ? Number(first[1].replace(",", ".")) : null;
+  const max = /max|amrap/.test(rest);
+  let set: WorkoutSet;
+  if (kind === "cardio") {
+    const km = rest.match(/(\d+(?:[.,]\d+)?)\s*km/);
+    set = { ...blankSet, minutes: /min/.test(rest) ? n : km ? null : n, km: km ? Number(km[1].replace(",", ".")) : null };
+    if (set.minutes == null && set.km == null) set = emptySet("cardio");
+  } else if (kind === "hold") {
+    set = { ...blankSet, seconds: max ? null : (n ?? 30) };
+  } else if (kind === "carry") {
+    set = { ...blankSet, metres: n ?? 30 };
+  } else {
+    set = { ...blankSet, reps: max ? null : n != null ? Math.round(n) : 8 };
+  }
+  return Array.from({ length: count }, () => ({ ...set }));
+}
 
 export function newWorkout(date: string, title: string): Workout {
   return { file: "", date, title, status: "planned", started: null, finished: null, notes: "", exercises: [] };
 }
 
 /** A fresh copy of `source` for `date`: same exercises and weights, nothing ticked. */
-export function planFrom(source: Workout, date: string, title = source.title): Workout {
+/**
+ * `keepNotes` carries the notes over: wanted from a template (round and rest
+ * instructions), not when repeating a past workout ("shoulder tight").
+ */
+export function planFrom(source: Workout, date: string, title = source.title, keepNotes = false): Workout {
   return {
     ...newWorkout(date, title),
-    exercises: source.exercises.map((e) => ({ ...e, notes: "", sets: e.sets.map((s) => ({ ...s, done: false })) })),
+    notes: keepNotes ? source.notes : "",
+    exercises: source.exercises.map((e) => ({ ...e, notes: keepNotes ? e.notes : "", sets: e.sets.map((s) => ({ ...s, done: false })) })),
   };
 }
 
@@ -111,6 +171,15 @@ export function pace(minutes: number | null, km: number | null): string | null {
   const m = Math.floor(per);
   const s = Math.round((per - m) * 60);
   return s === 60 ? `${m + 1}:00` : `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/** One set as text: "60 kg × 8", "bw × max", "45 s", "24 kg · 40 m", "20 min · 3 km". */
+export function setText(kind: ExerciseKind, s: WorkoutSet): string {
+  const kgPart = s.weight != null ? `${fmt(s.weight)} kg` : null;
+  if (kind === "cardio") return [s.minutes != null && `${fmt(s.minutes)} min`, s.km != null && `${fmt(s.km)} km`].filter(Boolean).join(" · ") || "–";
+  if (kind === "hold") return [kgPart, s.seconds != null ? `${fmt(s.seconds)} s` : "max hold"].filter(Boolean).join(" · ");
+  if (kind === "carry") return [kgPart, `${fmt(s.metres ?? 0)} m`].filter(Boolean).join(" · ");
+  return `${kgPart ?? "bw"} × ${s.reps ?? "max"}`;
 }
 
 /** Days between two YYYY-MM-DD dates (b - a). */
@@ -156,6 +225,29 @@ export async function deleteTemplate(file: string): Promise<void> {
   return demo.removeTemplate(file);
 }
 
+export async function getLibrary(): Promise<LibraryEntry[]> {
+  if (isTauri()) return invoke<LibraryEntry[]>("forge_library");
+  return demo.library();
+}
+
+/** Replaces the whole library (the backend drops blank and repeated names). */
+export async function saveLibrary(entries: LibraryEntry[]): Promise<LibraryEntry[]> {
+  if (isTauri()) return invoke<LibraryEntry[]>("forge_save_library", { entries });
+  return demo.saveLibrary(entries);
+}
+
+/** Groups in the order they first appear, each with its entries. */
+export function libraryGroups(entries: LibraryEntry[]): { group: string; entries: LibraryEntry[] }[] {
+  const out: { group: string; entries: LibraryEntry[] }[] = [];
+  for (const e of entries) {
+    const g = e.group.trim() || "Other";
+    let bucket = out.find((x) => x.group === g);
+    if (!bucket) out.push((bucket = { group: g, entries: [] }));
+    bucket.entries.push(e);
+  }
+  return out;
+}
+
 export async function getForgeStats(): Promise<ForgeStats> {
   if (isTauri()) return invoke<ForgeStats>("forge_stats", { today: today() });
   return demoStats(await demo.list());
@@ -165,6 +257,18 @@ export async function getForgeStats(): Promise<ForgeStats> {
 
 const WORKOUTS_KEY = "flesh-forge.demo.workouts";
 const TEMPLATES_KEY = "flesh-forge.demo.templates";
+const LIBRARY_KEY = "flesh-forge.demo.library";
+
+const SAMPLE_LIBRARY: LibraryEntry[] = [
+  { name: "Back squat", kind: "lift", group: "Lower body", target: "4 × 6-8", rest: "2 min", notes: "Or leg press" },
+  { name: "Wall sit", kind: "hold", group: "Lower body", target: "4 × 30s", rest: "30 s", notes: "" },
+  { name: "Bench press", kind: "lift", group: "Push", target: "4 × 6-8", rest: "2 min", notes: "Barbell or dumbbell" },
+  { name: "Archer push-ups", kind: "lift", group: "Push", target: "3 × max", rest: "90 s", notes: "Stop 2 reps short of failure" },
+  { name: "Farmer's carries", kind: "carry", group: "Grip and hangs", target: "3 × 30-40m", rest: "90 s", notes: "" },
+  { name: "Dead hangs", kind: "hold", group: "Grip and hangs", target: "2 × max", rest: "90 s", notes: "" },
+  { name: "Plank", kind: "hold", group: "Core", target: "3 × 45s", rest: "45 s", notes: "" },
+  { name: "Zone 2 row", kind: "cardio", group: "Cardio and conditioning", target: "35-45 min", rest: "", notes: "Conversational pace" },
+];
 
 function read(key: string): Workout[] | null {
   try {
@@ -187,7 +291,7 @@ const lifts = (name: string, sets: [number | null, number][], done = true): Exer
   name,
   kind: "lift",
   notes: "",
-  sets: sets.map(([weight, reps]) => ({ done, weight, reps, minutes: null, km: null })),
+  sets: sets.map(([weight, reps]) => ({ ...blankSet, done, weight, reps })),
 });
 
 function samples(): Workout[] {
@@ -209,7 +313,8 @@ function samples(): Workout[] {
   const legs = (squat: number, ago: number) =>
     session(ago, "Legs", [
       lifts("Squat", [[squat - 20, 8], [squat, 5], [squat, 5]]),
-      { name: "Treadmill", kind: "cardio", notes: "", sets: [{ done: true, weight: null, reps: null, minutes: 20, km: 3.2 }] },
+      { name: "Treadmill", kind: "cardio", notes: "", sets: [{ ...blankSet, done: true, minutes: 20, km: 3.2 }] },
+      { name: "Plank", kind: "hold", notes: "", sets: [{ ...blankSet, done: true, seconds: 45 }, { ...blankSet, done: true, seconds: 40 }] },
     ]);
   return [
     push(70, 40), legs(80, 38), push(70, 33), legs(85, 31), push(72.5, 26), legs(85, 24),
@@ -241,7 +346,7 @@ const demo = {
     return read(TEMPLATES_KEY) ?? [];
   },
   saveTemplate(w: Workout): Workout {
-    const t = { ...planFrom(w, ""), file: `${w.title}.md` };
+    const t = { ...planFrom(w, "", w.title, true), file: `${w.title}.md` };
     write(TEMPLATES_KEY, [...demo.templates().filter((x) => x.file !== t.file), t]);
     void emitApp("forge-changed");
     return t;
@@ -249,6 +354,27 @@ const demo = {
   removeTemplate(file: string) {
     write(TEMPLATES_KEY, demo.templates().filter((x) => x.file !== file));
     void emitApp("forge-changed");
+  },
+  library(): LibraryEntry[] {
+    try {
+      const raw = localStorage.getItem(LIBRARY_KEY);
+      return raw ? (JSON.parse(raw) as LibraryEntry[]) : SAMPLE_LIBRARY;
+    } catch {
+      return SAMPLE_LIBRARY;
+    }
+  },
+  saveLibrary(entries: LibraryEntry[]): LibraryEntry[] {
+    const seen = new Set<string>();
+    const clean = entries
+      .map((e) => ({ ...e, name: e.name.trim().replace(/\|/g, "/") }))
+      .filter((e) => e.name && !seen.has(e.name.toLowerCase()) && seen.add(e.name.toLowerCase()));
+    try {
+      localStorage.setItem(LIBRARY_KEY, JSON.stringify(clean));
+    } catch {
+      /* ignore */
+    }
+    void emitApp("forge-changed");
+    return clean;
   },
 };
 
@@ -277,20 +403,20 @@ function demoStats(workouts: Workout[]): ForgeStats {
       if (!done.length) continue;
       const stat = ex.get(e.name.toLowerCase()) ?? { name: e.name, kind: e.kind, points: [], bestWeight: null, bestE1rm: null };
       const est = (s: WorkoutSet) => (s.weight ?? 0) * (1 + ((s.reps ?? 0) > 1 ? (s.reps ?? 0) / 30 : 0));
-      const weighted = done.filter((s) => s.weight != null && s.reps);
-      const top = weighted.length ? Math.max(...weighted.map((s) => s.weight!)) : null;
+      const weighted = e.kind === "lift" ? done.filter((s) => s.weight != null && s.reps) : [];
+      const loaded = e.kind === "cardio" ? [] : done.filter((s) => s.weight != null);
+      const top = loaded.length ? Math.max(...loaded.map((s) => s.weight!)) : null;
       const best = weighted.length ? weighted.reduce((a, b) => (est(b) > est(a) ? b : a)) : null;
       const point: ExercisePoint = {
         date: w.date,
         topWeight: top,
         bestE1rm: best ? est(best) : null,
         volume: weighted.reduce((a, s) => a + s.weight! * s.reps!, 0),
-        minutes: done.reduce((a, s) => a + (s.minutes ?? 0), 0),
-        km: done.reduce((a, s) => a + (s.km ?? 0), 0),
-        summary:
-          e.kind === "cardio"
-            ? done.map((s) => `${fmt(s.minutes ?? 0)} min${s.km ? ` · ${fmt(s.km)} km` : ""}`).join(", ")
-            : done.map((s) => `${s.weight == null ? "bw" : `${fmt(s.weight)} kg`} × ${s.reps ?? 0}`).join(", "),
+        minutes: e.kind === "cardio" ? done.reduce((a, s) => a + (s.minutes ?? 0), 0) : 0,
+        km: e.kind === "cardio" ? done.reduce((a, s) => a + (s.km ?? 0), 0) : 0,
+        seconds: e.kind === "hold" ? Math.max(0, ...done.map((s) => s.seconds ?? 0)) : 0,
+        metres: e.kind === "carry" ? done.reduce((a, s) => a + (s.metres ?? 0), 0) : 0,
+        summary: done.map((s) => setText(e.kind, s)).join(", "),
       };
       if (best && point.bestE1rm != null && stat.bestE1rm != null && point.bestE1rm > stat.bestE1rm)
         records.push({ exercise: e.name, date: w.date, weight: best.weight!, reps: best.reps!, e1rm: point.bestE1rm });

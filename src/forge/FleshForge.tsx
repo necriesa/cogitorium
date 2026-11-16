@@ -1,26 +1,33 @@
 import { useCallback, useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { getForgeStats, listTemplates, listWorkouts, type ForgeStats, type Workout } from "../lib/forge";
+import { getForgeStats, getLibrary, listTemplates, listWorkouts, type ForgeStats, type LibraryEntry, type Workout } from "../lib/forge";
 import { onApp } from "../lib/events";
 import { today } from "../lib/vaultLog";
 import Planner from "./Planner";
 import ForgeRecord from "./ForgeRecord";
+import ForgeLibrary from "./ForgeLibrary";
 
-type Tab = "planner" | "record";
+type Tab = "planner" | "library" | "record";
+const TABS: { id: Tab; label: string }[] = [
+  { id: "planner", label: "Planner" },
+  { id: "library", label: "Library" },
+  { id: "record", label: "Record" },
+];
 const TAB_KEY = "flesh-forge.tab";
 
 function readTab(): Tab {
   try {
-    return localStorage.getItem(TAB_KEY) === "record" ? "record" : "planner";
+    const saved = localStorage.getItem(TAB_KEY);
+    return TABS.some((t) => t.id === saved) ? (saved as Tab) : "planner";
   } catch {
     return "planner";
   }
 }
 
 /**
- * The Flesh-Forge section: the day's workout planner and the record of gym
- * visits and progression. Both read the vault through lib/forge.ts and
+ * The Flesh-Forge section: the day's workout planner, the exercise library
+ * (with the template builder) and the record of gym visits and progression. Both read the vault through lib/forge.ts and
  * refresh when any window saves a workout ("forge-changed") or gains focus.
  * `compact` is the popped-out widget, which leads with the planner.
  */
@@ -29,15 +36,17 @@ export default function FleshForge({ compact = false }: { compact?: boolean }) {
   const [date, setDate] = useState(today);
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [templates, setTemplates] = useState<Workout[]>([]);
+  const [library, setLibrary] = useState<LibraryEntry[]>([]);
   const [stats, setStats] = useState<ForgeStats | null>(null);
   const [error, setError] = useState("");
 
   const load = useCallback(() => {
-    Promise.all([listWorkouts(), listTemplates(), getForgeStats()])
-      .then(([w, t, s]) => {
+    Promise.all([listWorkouts(), listTemplates(), getForgeStats(), getLibrary()])
+      .then(([w, t, s, l]) => {
         setWorkouts(w);
         setTemplates(t);
         setStats(s);
+        setLibrary(l);
         setError("");
       })
       .catch((e) => setError(String(e)));
@@ -71,15 +80,17 @@ export default function FleshForge({ compact = false }: { compact?: boolean }) {
   return (
     <div className={compact ? "forge-shell compact" : "forge-shell"}>
       <div className="forge-tabs" role="tablist" aria-label="Flesh-Forge">
-        {(["planner", "record"] as Tab[]).map((t) => (
-          <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "forge-tab on" : "forge-tab"} onClick={() => setTab(t)}>
-            {t === "planner" ? "Planner" : "Record"}
+        {TABS.map((t) => (
+          <button key={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? "forge-tab on" : "forge-tab"} onClick={() => setTab(t.id)}>
+            {t.label}
           </button>
         ))}
       </div>
       {error && <p className="footnote error">The forge could not read the vault: {error}</p>}
       {tab === "planner" ? (
-        <Planner workouts={workouts} templates={templates} stats={stats} date={date} onDate={setDate} onRefresh={load} />
+        <Planner workouts={workouts} templates={templates} library={library} stats={stats} date={date} onDate={setDate} onRefresh={load} />
+      ) : tab === "library" ? (
+        <ForgeLibrary library={library} templates={templates} onChanged={load} />
       ) : stats ? (
         <ForgeRecord
           stats={stats}
